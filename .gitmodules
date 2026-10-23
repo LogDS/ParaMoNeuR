@@ -1,3 +1,9 @@
 [submodule "submodules/yaucl"]
 	path = submodules/yaucl
 	url = https://github.com/LogDS/yaucl/
+[submodule "submodules/cccl"]
+	path = submodules/cccl
+	url = https://github.com/NVIDIA/cccl
+[submodule "submodules/field-reflection"]
+	path = submodules/field-reflection
+	url = https://github.com/yosh-matsuda/field-reflection

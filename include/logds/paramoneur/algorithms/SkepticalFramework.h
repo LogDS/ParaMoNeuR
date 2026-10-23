@@ -7,6 +7,11 @@
 #include "logds/paramoneur/scikit_interface/scikit_interface_basetypes.h"
 
 namespace logds::paramoneur {
+    /**
+     * This class represents the aggregated outputs that can be returned as a query outcome, in its
+     * non-aggregated form. Then, depending on the expected outcome class, these will be represented
+     * in the desired representation.
+     */
     struct QueryOutput {
         double world_representativeness;
         double skeptical_min_truth;
