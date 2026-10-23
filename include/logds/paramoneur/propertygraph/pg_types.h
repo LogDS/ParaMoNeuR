@@ -73,6 +73,12 @@ namespace logds::pg {
         uint64_t next_ingoing = DISK_NULL;
         bool exists = false;
     };
+
+    struct EdgeTuple {
+        size_t source;
+        size_t target;
+        size_t edge_id;
+    };
 // #endif // PROPERTY_GRAPH_TYPES_H
 }
 

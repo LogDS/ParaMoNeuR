@@ -1,5 +1,6 @@
 #include <iostream>
 
+#include "logds/paramoneur/propertygraph/pg.h"
 #include "logds/paramoneur/propertygraph/pg_store.h"
 
 
@@ -30,11 +31,6 @@ struct ConnectedTo {
 // TIP To <b>Run</b> code, press <shortcut actionId="Run"/> or click the <icon sources="AllIcons.Actions.Execute"/> icon in the gutter.
 
 int main() {
-    std::cout << "Initializing Property Graph Disk Engine..." << std::endl;
-
-    // Inizializza lo storage usando come prefisso di base "my_graph_store"
-    logds::pg::PropertyGraphStore graph("my_graph_store");
-
     // Variabili per mantenere gli ID persistenti lungo le diverse fasi del programma
     size_t id_stazione_a = 0;
     size_t id_stazione_b = 1;
@@ -44,6 +40,13 @@ int main() {
     size_t id_device_iot = 3;
     size_t edge_follows = 1;
     size_t edge_connect = 2;
+    {
+        std::cout << "Initializing Property Graph Disk Engine..." << std::endl;
+
+    // Inizializza lo storage usando come prefisso di base "my_graph_store"
+    logds::pg::PropertyGraphStore graph("my_graph_store");
+
+
 
     // Convalida preliminare per determinare se il database contiene già dei dati
     bool db_exists = false;
@@ -218,96 +221,43 @@ int main() {
 
     tx3.rollback();
     std::cout << "\nAll storage engine constraints successfully verified." << std::endl;
-    return 0;
- //    // TIP Press <shortcut actionId="RenameElement"/> when your caret is at the <b>lang</b> variable name to see how CLion can help you rename it.
- //
- // std::cout << "Initializing Property Graph Disk Engine..." << std::endl;
- //
- //    // Inizializza lo storage usando come prefisso di base "my_graph_store"
- //    logds::pg::PropertyGraphStore graph("my_graph_store");
- //
- //    // ==========================================
- //    // FASE 1: APERTURA TRANSAZIONE E CREAZIONE
- //    // ==========================================
- //    auto tx1 = graph.begin_transaction();
- //
- //    // Creazione esplicita controllata di nodi isolati
- //     size_t id_stazione_a = tx1.create_node();
- //    size_t id_stazione_b = tx1.create_node();
- //
- //    // Assegnamento proprieta primitive tramite sintassi operator[] nativa
- //    tx1[id_stazione_a]["name"] = "Milan Central Station";
- //    tx1[id_stazione_a]["capacity"] = 45000;
- //    tx1[id_stazione_a]["active"] = true;
- //
- //    tx1[id_stazione_b]["name"] = "Rome Termini Station";
- //
- //    // Costruzione e inserimento di una proprieta complessa: Tensor Sparso COO
- //    logds::pg::SparseTensor matrix;
- //    matrix.data_type = logds::pg::TensorDataType::DOUBLE;
- //    matrix.rank = 3;                       // Tensore 3D
- //    matrix.shape = {100, 100, 50};          // Dimensioni degli assi
- //    matrix.default_value = -1.0;            // Valore di background (non zero)
- //    matrix.coordinates = { {0, 14, 5}, {85, 2, 41} }; // Elementi non-default espliciti
- //    matrix.values = std::vector<double>{ 74.3, 192.8 };
- //
- //    tx1[id_stazione_a]["traffic_tensor"] = matrix;
- //
- //    // Creazione controllata di un arco relazionale (Verifica l'esistenza di 10 e 20)
- //    auto edge_id = tx1.create_edge(id_stazione_a, id_stazione_b);
- //    tx1.get_edge(edge_id)["distance_km"] = 572.5;
- //
- //    std::cout << "Committing transaction 1 to secondary memory..." << std::endl;
- //    tx1.commit();
- //
- //    // ==========================================
- //    // FASE 2: VERIFICA DI ESISTENZA E SICUREZZA
- //    // ==========================================
- //    auto tx2 = graph.begin_transaction();
- //
- //    try {
- //        // Questa riga deve lanciare un'eccezione poiche il nodo 99 non e mai stato creato
- //        tx2[99]["name"] ="Ghost";
- //    } catch (const std::runtime_error& e) {
- //        std::cout << "Caught expected safety guard exception: " << e.what() << std::endl;
- //    }
- //
- //    try {
- //        // Questa riga deve fallire perche il nodo destinazione 8888 non esiste nella topologia
- //        tx2.create_edge( id_stazione_b, 8888);
- //    } catch (const std::runtime_error& e) {
- //        std::cout << "Caught expected topology guard exception: " << e.what() << std::endl;
- //    }
- //    tx2.rollback();
- //
- //    // ==========================================
- //    // FASE 3: LETTURA E VERIFICA DAL DISCO
- //    // ==========================================
- //    std::cout << "Opening read transaction to verify data..." << std::endl;
- //    auto tx3 = graph.begin_transaction();
- //
- //    // Lettura in tempo costante O(1) con parsing automatico dei byte
- //    logds::pg::PropertyValue p_name = tx3[id_stazione_a]["name"];
- //    logds::pg::PropertyValue p_cap = tx3[id_stazione_a]["capacity"];
- //    logds::pg::PropertyValue p_edge_dist = tx3.get_edge(edge_id)["distance_km"];
- //
- //    std::cout << "Retrieved Node 10 Name: " << std::get<std::string>(p_name.value) << std::endl;
- //    std::cout << "Retrieved Node 10 Capacity: " << std::get<int64_t>(p_cap.value) << std::endl;
- //    std::cout << "Retrieved Edge 500 Distance: " << std::get<double>(p_edge_dist.value) << " km" << std::endl;
- //
- //    // Estrazione e convalida dei metadati e dei vettori del tensore sparso
- //    logds::pg::PropertyValue p_tensor = tx3[id_stazione_a]["traffic_tensor"];
- //    logds::pg::SparseTensor r_tensor = std::get<logds::pg::SparseTensor>(p_tensor.value);
- //
- //    std::cout << "Retrieved Sparse Tensor Rank: " << r_tensor.rank << std::endl;
- //    std::cout << "Retrieved Sparse Tensor Background Value: " << std::get<double>(r_tensor.default_value) << std::endl;
- //
- //    auto tensor_vals = std::get<std::vector<double>>(r_tensor.values);
- //    std::cout << "Explicit Element [0, 14, 5] Value: " << tensor_vals[0] << std::endl;
- //    std::cout << "Explicit Element [85, 2, 41] Value: " << tensor_vals[1] << std::endl;
- //
- //    tx3.rollback();
- //    std::cout << "All storage engine constraints successfully verified." << std::endl;
- //    return 0;
-    // TIP See CLion help at <a href="https://www.jetbrains.com/help/clion/">jetbrains.com/help/clion/</a>. Also, you can try interactive lessons for CLion by selecting 'Help | Learn IDE Features' from the main menu.
+    }
+    // =========================================================================
+    // FASE 4: USO DEL WRAPPER PROPERTYGRAPH E SERIALIZZAZIONE SU FILE (CORRETTO)
+    // =========================================================================
+    std::cout << "\n--- Commencing Phase 4: NetworkX-style PropertyGraph Wrapper & Disk Export ---" << std::endl;
+
+    logds::pg::PropertyGraph G("my_graph_store");
+
+    std::cout << "Navigating outgoing connections of Node 0 via NetworkX-style facade:" << std::endl;
+    for (size_t target_node : G.successors(id_stazione_a)) {
+        // CORREZIONE: Assegnamento implicito del Proxy a PropertyValue per bypassare l'attributo assente '.value'
+        logds::pg::PropertyValue name_prop = G.nodes[target_node]["name"];
+        std::string target_name = std::get<std::string>(name_prop.value);
+
+        std::cout << " -> Hub Node " << id_stazione_a << " points directly to Node " << target_node
+                  << " [Target Name: " << target_name << "]" << std::endl;
+    }
+
+    std::string graphml_buffer = G.to_graphml();
+    std::string dot_buffer = G.to_dot();
+
+    std::string graphml_filename = "exported_graph.graphml";
+    std::string dot_filename = "exported_graph.dot";
+
+    std::ofstream graphml_file(graphml_filename);
+    if (graphml_file.is_open()) {
+        graphml_file << graphml_buffer;
+        graphml_file.close();
+        std::cout << ">> [Disk Export Success] Saved GraphML schema to: " << graphml_filename << std::endl;
+    }
+
+    std::ofstream dot_file(dot_filename);
+    if (dot_file.is_open()) {
+        dot_file << dot_buffer;
+        dot_file.close();
+        std::cout << ">> [Disk Export Success] Saved Graphviz DOT layout to: " << dot_filename << std::endl;
+    }
+
+    std::cout << "\nAll storage engine, reflection, type-checking and networkx constraints verified." << std::endl;
 }

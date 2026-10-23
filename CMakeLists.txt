@@ -30,7 +30,8 @@ if(NOT TARGET CUDA::cutensor)
 
     # Se entrambi i componenti vengono trovati, crea il target mancante
     if(CUDA_cutensor_INCLUDE_DIR AND CUDA_cutensor_LIBRARY)
-        add_library(CUDA::cutensor UNKNOWN IMPORTED)
+        add_library(CUDA::cutensor UNKNOWN IMPORTED
+                include/logds/paramoneur/propertygraph/pg.h)
         set_target_properties(CUDA::cutensor PROPERTIES
                 INTERFACE_INCLUDE_DIRECTORIES "${CUDA_cutensor_INCLUDE_DIR}"
                 IMPORTED_LOCATION "${CUDA_cutensor_LIBRARY}"
@@ -68,7 +69,8 @@ add_executable(Paramoneur2 main.cpp
         sources/logds/paramoneur/algorithms/indexing.cpp
         include/logds/paramoneur/propertygraph/pg_types.h
         include/logds/paramoneur/propertygraph/pg_store.h
-        sources/logds/paramoneur/propertygraph/pg_store.cpp)
+        sources/logds/paramoneur/propertygraph/pg_store.cpp
+        sources/logds/paramoneur/propertygraph/pg.cpp)
 target_link_libraries(Paramoneur2 CUDA::cutensor
         CUDA::cudart             # Runtime di CUDA (Richiesto da CCCL/Thrust)
         CUDA::cuda_driver        # Driver CUDA core

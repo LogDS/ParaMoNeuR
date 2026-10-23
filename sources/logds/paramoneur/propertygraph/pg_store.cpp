@@ -3,6 +3,8 @@
 //
 
 #include "logds/paramoneur/propertygraph/pg_store.h"
+
+#include <iostream>
 #include <sstream>
 #include <stdexcept>
 
@@ -21,8 +23,6 @@ namespace logds::pg {
         }
         return it->second;
     }
-
-
 
     PropertyProxy &PropertyProxy::operator=(const PropertyValue &val) {
         properties_ref[key] = val;
@@ -293,6 +293,97 @@ namespace logds::pg {
         }
         return true;
     }
+
+std::vector<size_t> PropertyGraphStore::get_outgoing_edge_ids(size_t node_id) {
+    std::vector<size_t> edge_ids;
+
+    nodes_file.clear();
+    nodes_file.seekp(0, std::ios::cur);
+    nodes_file.seekg(node_id * sizeof(NodeRecord), std::ios::beg);
+
+    NodeRecord node_rec;
+    // Se il nodo non esiste o non è mai stato scritto, la sua lista uscente è nativamente vuota
+    if (!nodes_file.read(reinterpret_cast<char*>(&node_rec), sizeof(NodeRecord)) || !node_rec.exists) {
+        nodes_file.clear();
+        return edge_ids;
+    }
+
+    size_t max_edge_id = get_next_edge_id_from_disk();
+    uint64_t current_edge = node_rec.first_outgoing;
+
+    // Se il record su disco era sporco (0) invece di DISK_NULL su un nodo senza archi, questo lo intercetta
+    if (current_edge == 0 && max_edge_id == 0) {
+        return edge_ids;
+    }
+
+    while (current_edge != DISK_NULL) {
+        if (current_edge >= max_edge_id) break;
+
+        edge_ids.push_back(static_cast<size_t>(current_edge));
+
+        edges_file.clear();
+        edges_file.seekp(0, std::ios::cur);
+        edges_file.seekg(current_edge * sizeof(EdgeRecord), std::ios::beg);
+
+        EdgeRecord edge_rec;
+        if (!edges_file.read(reinterpret_cast<char*>(&edge_rec), sizeof(EdgeRecord)) || !edge_rec.exists) {
+            break;
+        }
+
+        // Controllo di terminazione reale: se incontriamo un loop o un puntatore a 0 non valido
+        if (edge_rec.next_outgoing == current_edge || (edge_rec.next_outgoing == 0 && max_edge_id <= 1)) {
+            break;
+        }
+
+        current_edge = edge_rec.next_outgoing;
+    }
+    return edge_ids;
+}
+
+std::vector<size_t> PropertyGraphStore::get_ingoing_edge_ids(size_t node_id) {
+    std::vector<size_t> edge_ids;
+
+    nodes_file.clear();
+    nodes_file.seekp(0, std::ios::cur);
+    nodes_file.seekg(node_id * sizeof(NodeRecord), std::ios::beg);
+
+    NodeRecord node_rec;
+    if (!nodes_file.read(reinterpret_cast<char*>(&node_rec), sizeof(NodeRecord)) || !node_rec.exists) {
+        nodes_file.clear();
+        return edge_ids;
+    }
+
+    size_t max_edge_id = get_next_edge_id_from_disk();
+    uint64_t current_edge = node_rec.first_ingoing;
+
+    if (current_edge == 0 && max_edge_id == 0) {
+        return edge_ids;
+    }
+
+    while (current_edge != DISK_NULL) {
+        if (current_edge >= max_edge_id) break;
+
+        edge_ids.push_back(static_cast<size_t>(current_edge));
+
+        edges_file.clear();
+        edges_file.seekp(0, std::ios::cur);
+        edges_file.seekg(current_edge * sizeof(EdgeRecord), std::ios::beg);
+
+        EdgeRecord edge_rec;
+        if (!edges_file.read(reinterpret_cast<char*>(&edge_rec), sizeof(EdgeRecord)) || !edge_rec.exists) {
+            break;
+        }
+
+        if (edge_rec.next_ingoing == current_edge || (edge_rec.next_ingoing == 0 && max_edge_id <= 1)) {
+            break;
+        }
+
+        current_edge = edge_rec.next_ingoing;
+    }
+    return edge_ids;
+}
+
+
 
     std::string PropertyGraphStore::serialize_payload(const std::vector<std::string> &labels,
                                                       const std::unordered_map<std::string, PropertyValue> &props) {

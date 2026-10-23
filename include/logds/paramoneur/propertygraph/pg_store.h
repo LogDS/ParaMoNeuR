@@ -441,18 +441,24 @@ private:
     std::fstream edges_file;
     std::fstream payloads_file;
 
-    size_t get_next_node_id_from_disk();
-    size_t get_next_edge_id_from_disk();
 
     std::string serialize_payload(const std::vector<std::string>& labels, const std::unordered_map<std::string, PropertyValue>& props);
     void deserialize_payload(const std::string& buffer, std::vector<std::string>& labels, std::unordered_map<std::string, PropertyValue>& props);
     bool check_node_exists_on_disk(size_t id);
     bool check_edge_exists_on_disk(size_t id);
+
+public:
+
+    size_t get_next_node_id_from_disk();
+    size_t get_next_edge_id_from_disk();
     bool fetch_node_from_disk(size_t id, NodeData& data);
     bool fetch_edge_from_disk(size_t id, EdgeData& data);
 
-public:
-    PropertyGraphStore(const std::string& base_path);
+    std::vector<size_t> get_outgoing_edge_ids(size_t node_id);
+    // Estrae tutti gli ID degli archi entranti in un nodo navigando la catena sul disco
+    std::vector<size_t> get_ingoing_edge_ids(size_t node_id);
+
+PropertyGraphStore(const std::string& base_path);
     ~PropertyGraphStore();
     Transaction begin_transaction();
 };
