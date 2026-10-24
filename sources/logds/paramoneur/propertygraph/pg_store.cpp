@@ -404,7 +404,7 @@ std::vector<size_t> PropertyGraphStore::get_ingoing_edge_ids(size_t node_id) {
             uint8_t type_byte = static_cast<uint8_t>(prop_val.type);
             ss.write(reinterpret_cast<const char *>(&type_byte), sizeof(type_byte));
                                     if (prop_val.type == PropertyType::SPARSE_TENSOR) {
-                const auto &tensor = std::get<SparseTensor>(prop_val.value);
+                const auto &tensor = std::get<types::SparseTensor>(prop_val.value);
                 uint8_t dt = static_cast<uint8_t>(tensor.get_data_type());
                 ss.write(reinterpret_cast<const char *>(&dt), sizeof(dt));
 
@@ -420,7 +420,7 @@ std::vector<size_t> PropertyGraphStore::get_ingoing_edge_ids(size_t node_id) {
                 }
 
                 uint64_t num_elements = static_cast<uint64_t>(tensor.get_coordinates().size());
-                if (tensor.get_data_type() == TensorDataType::INT64) {
+                if (tensor.get_data_type() == types::TensorDataType::INT64) {
                     int64_t def = std::get<int64_t>(tensor.get_default_value());
                     ss.write(reinterpret_cast<const char *>(&def), sizeof(def));
                     ss.write(reinterpret_cast<const char *>(&num_elements), sizeof(num_elements));
@@ -494,7 +494,7 @@ std::vector<size_t> PropertyGraphStore::get_ingoing_edge_ids(size_t node_id) {
                                     if (type == PropertyType::SPARSE_TENSOR) {
                 uint8_t dt = 0;
                 ss.read(reinterpret_cast<char *>(&dt), sizeof(dt));
-                TensorDataType data_type = static_cast<TensorDataType>(dt);
+                types::TensorDataType data_type = static_cast<types::TensorDataType>(dt);
 
                 // CORREZIONE: Leggi il rango come 32 bit per evitare il disallineamento binario
                 uint32_t t_rank_32 = 0;
@@ -510,10 +510,10 @@ std::vector<size_t> PropertyGraphStore::get_ingoing_edge_ids(size_t node_id) {
                 }
 
                 // Invocazione del costruttore parametrizzato controllato
-                SparseTensor tensor(data_type, shape_vec);
+                types::SparseTensor tensor(data_type, shape_vec);
                 uint64_t num_elements = 0;
 
-                if (data_type == TensorDataType::INT64) {
+                if (data_type == types::TensorDataType::INT64) {
                     int64_t def = 0;
                     ss.read(reinterpret_cast<char *>(&def), sizeof(def));
 

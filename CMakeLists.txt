@@ -70,7 +70,9 @@ add_executable(Paramoneur2 main.cpp
         include/logds/paramoneur/propertygraph/pg_types.h
         include/logds/paramoneur/propertygraph/pg_store.h
         sources/logds/paramoneur/propertygraph/pg_store.cpp
-        sources/logds/paramoneur/propertygraph/pg.cpp)
+        sources/logds/paramoneur/propertygraph/pg.cpp
+        SparseTensor.cpp
+        include/logds/paramoneur/types/SparseTensor.h)
 target_link_libraries(Paramoneur2 CUDA::cutensor
         CUDA::cudart             # Runtime di CUDA (Richiesto da CCCL/Thrust)
         CUDA::cuda_driver        # Driver CUDA core

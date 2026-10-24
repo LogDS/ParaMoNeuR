@@ -77,7 +77,7 @@ int main() {
         tx1[id_stazione_b]["name"] = "Rome Termini Station";
 
         // Costruzione e inserimento di una proprieta complessa: Tensor Sparso COO
-        logds::pg::SparseTensor matrix({100, 100, 50}, -1.0);
+        logds::types::SparseTensor matrix({100, 100, 50}, -1.0);
         // matrix.data_type = logds::pg::TensorDataType::DOUBLE;
         // matrix.rank = 3;                       // Tensore 3D
         // matrix.shape = {100, 100, 50};          // Dimensioni degli assi
@@ -156,7 +156,7 @@ int main() {
 
     // Estrazione e convalida dei metadati e dei vettori del tensore sparso
     logds::pg::PropertyValue p_tensor = tx3[id_stazione_a]["traffic_tensor"];
-    logds::pg::SparseTensor r_tensor = std::get<logds::pg::SparseTensor>(p_tensor.value);
+    logds::types::SparseTensor r_tensor = std::get<logds::types::SparseTensor>(p_tensor.value);
 
     std::cout << "Retrieved Sparse Tensor Rank: " << r_tensor.get_rank() << std::endl;
     std::cout << "Retrieved Sparse Tensor Background Value: " << std::get<double>(r_tensor.get_default_value()) << std::endl;

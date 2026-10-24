@@ -75,7 +75,7 @@ public:
     PropertyProxy(std::unordered_map<std::string, PropertyValue>& props, const std::string& k, bool& dirty);
     operator PropertyValue() const;
     PropertyProxy& operator=(const PropertyValue& val);
-    PropertyProxy& operator=(const SparseTensor& val) {
+    PropertyProxy& operator=(const types::SparseTensor& val) {
         PropertyValue prop{PropertyType::SPARSE_TENSOR, val};
         return *this=prop;
     }
@@ -187,7 +187,7 @@ public:
                     (*this)[node_id][key] = PropertyValue{ PropertyType::STRING, field_val };
                 } else if constexpr (std::is_same_v<FieldType, bool>) {
                     (*this)[node_id][key] = PropertyValue{ PropertyType::BOOL, field_val };
-                } else if constexpr (std::is_same_v<FieldType, SparseTensor>) {
+                } else if constexpr (std::is_same_v<FieldType, types::SparseTensor>) {
                     (*this)[node_id][key] = PropertyValue{ PropertyType::SPARSE_TENSOR, field_val };
                 }
             };
@@ -232,8 +232,8 @@ public:
                     field_val = std::get<std::string>(p_val.value);
                 } else if constexpr (std::is_same_v<FieldType, bool>) {
                     field_val = std::get<bool>(p_val.value);
-                } else if constexpr (std::is_same_v<FieldType, SparseTensor>) {
-                    field_val = std::get<SparseTensor>(p_val.value);
+                } else if constexpr (std::is_same_v<FieldType, types::SparseTensor>) {
+                    field_val = std::get<types::SparseTensor>(p_val.value);
                 }
             };
             (deserialize_field(std::integral_constant<std::size_t, Is>{}), ...);
@@ -311,8 +311,8 @@ public:
                     field_val = std::get<std::string>(p_val.value);
                 } else if constexpr (std::is_same_v<FieldType, bool>) {
                     field_val = std::get<bool>(p_val.value);
-                } else if constexpr (std::is_same_v<FieldType, SparseTensor>) {
-                    field_val = std::get<SparseTensor>(p_val.value);
+                } else if constexpr (std::is_same_v<FieldType, types::SparseTensor>) {
+                    field_val = std::get<types::SparseTensor>(p_val.value);
                 }
             };
             (deserialize_field(std::integral_constant<std::size_t, Is>{}), ...);
@@ -350,7 +350,7 @@ public:
                     get_edge(edge_id)[key] = PropertyValue{ PropertyType::STRING, field_val };
                 } else if constexpr (std::is_same_v<FieldType, bool>) {
                     get_edge(edge_id)[key] = PropertyValue{ PropertyType::BOOL, field_val };
-                } else if constexpr (std::is_same_v<FieldType, SparseTensor>) {
+                } else if constexpr (std::is_same_v<FieldType, types::SparseTensor>) {
                     get_edge(edge_id)[key] = PropertyValue{ PropertyType::SPARSE_TENSOR, field_val };
                 }
             };
@@ -419,8 +419,8 @@ public:
                     field_val = std::get<std::string>(p_val.value);
                 } else if constexpr (std::is_same_v<FieldType, bool>) {
                     field_val = std::get<bool>(p_val.value);
-                } else if constexpr (std::is_same_v<FieldType, SparseTensor>) {
-                    field_val = std::get<SparseTensor>(p_val.value);
+                } else if constexpr (std::is_same_v<FieldType, types::SparseTensor>) {
+                    field_val = std::get<types::SparseTensor>(p_val.value);
                 }
             };
             (deserialize_field(std::integral_constant<std::size_t, Is>{}), ...);
