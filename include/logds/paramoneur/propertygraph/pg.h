@@ -258,17 +258,17 @@ public:
 
                     if (v.type == logds::pg::PropertyType::SPARSE_TENSOR) {
                         const auto& tensor = std::get<logds::pg::SparseTensor>(v.value);
-                        ss << "      <data key=\"" << k << "_rank\">" << tensor.rank << "</data>\n";
+                        ss << "      <data key=\"" << k << "_rank\">" << tensor.get_rank() << "</data>\n";
 
                         ss << "      <data key=\"" << k << "_shape\">[";
-                        for (size_t s = 0; s < tensor.shape.size(); ++s) {
-                            ss << tensor.shape[s] << (s + 1 < tensor.shape.size() ? "," : "");
+                        for (size_t s = 0; s < tensor.get_shape().size(); ++s) {
+                            ss << tensor.get_shape()[s] << (s + 1 < tensor.get_shape().size() ? "," : "");
                         }
                         ss << "]</data>\n";
 
                         ss << "      <data key=\"" << k << "_default\">";
-                        if (tensor.data_type == logds::pg::TensorDataType::INT64) ss << std::get<int64_t>(tensor.default_value);
-                        else ss << std::get<double>(tensor.default_value);
+                        if (tensor.get_data_type() == logds::pg::TensorDataType::INT64) ss << std::get<int64_t>(tensor.get_default_value());
+                        else ss << std::get<double>(tensor.get_default_value());
                         ss << "</data>\n";
 
                         ss << "      <data key=\"" << k << "_coo_data\"><![CDATA[" << serialize_tensor_coo_clean(tensor) << "]]></data>\n";
@@ -297,17 +297,18 @@ public:
 
                     if (v.type == logds::pg::PropertyType::SPARSE_TENSOR) {
                         const auto& tensor = std::get<logds::pg::SparseTensor>(v.value);
-                        ss << "      <data key=\"" << k << "_rank\">" << tensor.rank << "</data>\n";
+                        ss << "      <data key=\"" << k << "_rank\">" << tensor.get_rank() << "</data>\n";
 
                         ss << "      <data key=\"" << k << "_shape\">[";
-                        for (size_t s = 0; s < tensor.shape.size(); ++s) {
-                            ss << tensor.shape[s] << (s + 1 < tensor.shape.size() ? "," : "");
+                        const auto& shape = tensor.get_shape();
+                        for (size_t s = 0; s < shape.size(); ++s) {
+                            ss << shape[s] << (s + 1 < shape.size() ? "," : "");
                         }
                         ss << "]</data>\n";
 
                         ss << "      <data key=\"" << k << "_default\">";
-                        if (tensor.data_type == logds::pg::TensorDataType::INT64) ss << std::get<int64_t>(tensor.default_value);
-                        else ss << std::get<double>(tensor.default_value);
+                        if (tensor.get_data_type() == logds::pg::TensorDataType::INT64) ss << std::get<int64_t>(tensor.get_default_value());
+                        else ss << std::get<double>(tensor.get_default_value());
                         ss << "</data>\n";
 
                         ss << "      <data key=\"" << k << "_coo_data\"><![CDATA[" << serialize_tensor_coo_clean(tensor) << "]]></data>\n";
@@ -364,18 +365,21 @@ private:
     std::string serialize_tensor_coo_clean(const logds::pg::SparseTensor& tensor) {
         std::ostringstream oss;
         oss << "[";
-        for (size_t i = 0; i < tensor.coordinates.size(); ++i) {
+        const auto& coordinates = tensor.get_coordinates();
+        const auto& dt = tensor.get_data_type();
+        const auto& values = tensor.get_values();
+        for (size_t i = 0; i < coordinates.size(); ++i) {
             oss << "{\"c\":[";
-            for (size_t r = 0; r < tensor.coordinates[i].size(); ++r) {
-                oss << tensor.coordinates[i][r] << (r + 1 < tensor.coordinates[i].size() ? "," : "");
+            for (size_t r = 0; r <  coordinates[i].size(); ++r) {
+                oss <<  coordinates[i][r] << (r + 1 <  coordinates[i].size() ? "," : "");
             }
             oss << "],\"v\":";
-            if (tensor.data_type == logds::pg::TensorDataType::INT64) {
-                oss << std::get<std::vector<int64_t>>(tensor.values)[i];
+            if (dt == logds::pg::TensorDataType::INT64) {
+                oss << std::get<std::vector<int64_t>>(values)[i];
             } else {
-                oss << std::get<std::vector<double>>(tensor.values)[i];
+                oss << std::get<std::vector<double>>(values)[i];
             }
-            oss << "}" << (i + 1 < tensor.coordinates.size() ? "," : "");
+            oss << "}" << (i + 1 < coordinates.size() ? "," : "");
         }
         oss << "]";
         return oss.str();
@@ -414,37 +418,39 @@ private:
             oss << "      <TR><TD BGCOLOR=\"#F3F4F6\" ALIGN=\"LEFT\"><B>" << key << " (SparseTensor)</B></TD></TR>\n";
 
             // Riga per il Rango
-            oss << "      <TR><TD ALIGN=\"LEFT\">  <I>rank:</I> " << tensor.rank << "</TD></TR>\n";
+            oss << "      <TR><TD ALIGN=\"LEFT\">  <I>rank:</I> " << tensor.get_rank() << "</TD></TR>\n";
 
             // Riga per la Shape
             oss << "      <TR><TD ALIGN=\"LEFT\">  <I>shape:</I> [";
-            for (size_t s = 0; s < tensor.shape.size(); ++s) {
-                oss << tensor.shape[s] << (s + 1 < tensor.shape.size() ? "," : "");
+            const auto& shape = tensor.get_shape();
+            for (size_t s = 0; s < shape.size(); ++s) {
+                oss << shape[s] << (s + 1 < shape.size() ? "," : "");
             }
             oss << "]</TD></TR>\n";
 
             // Riga per il valore di Background (Default)
             oss << "      <TR><TD ALIGN=\"LEFT\">  <I>default:</I> ";
-            if (tensor.data_type == logds::pg::TensorDataType::INT64) {
-                oss << std::get<int64_t>(tensor.default_value);
+            if (tensor.get_data_type() == logds::pg::TensorDataType::INT64) {
+                oss << std::get<int64_t>(tensor.get_default_value());
             } else {
-                oss << std::get<double>(tensor.default_value);
+                oss << std::get<double>(tensor.get_default_value());
             }
             oss << "</TD></TR>\n";
 
             // Righe verticali separate per ciascun elemento non nullo del formato COO
-            if (!tensor.coordinates.empty()) {
+            const auto& coordinates = tensor.get_coordinates();
+            if (!coordinates.empty()) {
                 oss << "      <TR><TD BGCOLOR=\"#F9FAFB\" ALIGN=\"LEFT\"><I>Non-Zero Elements:</I></TD></TR>\n";
-                for (size_t i = 0; i < tensor.coordinates.size(); ++i) {
+                for (size_t i = 0; i < coordinates.size(); ++i) {
                     oss << "      <TR><TD ALIGN=\"LEFT\">    coor [";
-                    for (size_t r = 0; r < tensor.coordinates[i].size(); ++r) {
-                        oss << tensor.coordinates[i][r] << (r + 1 < tensor.coordinates[i].size() ? "," : "");
+                    for (size_t r = 0; r < coordinates[i].size(); ++r) {
+                        oss << coordinates[i][r] << (r + 1 < coordinates[i].size() ? "," : "");
                     }
                     oss << "] = <B>";
-                    if (tensor.data_type == logds::pg::TensorDataType::INT64) {
-                        oss << std::get<std::vector<int64_t>>(tensor.values)[i];
+                    if (tensor.get_data_type() == logds::pg::TensorDataType::INT64) {
+                        oss << std::get<std::vector<int64_t>>(tensor.get_values())[i];
                     } else {
-                        oss << std::get<std::vector<double>>(tensor.values)[i];
+                        oss << std::get<std::vector<double>>(tensor.get_values())[i];
                     }
                     oss << "</B></TD></TR>\n";
                 }
@@ -485,28 +491,28 @@ std::string format_property_value(const logds::pg::PropertyValue& p_val, bool is
             // Usiamo una formattazione multilinea pulita per una visualizzazione ottimale
             std::string separator = is_xml ? " | " : "<BR/>";
 
-            oss << "Tensor(rank=" << tensor.rank << ", shape=[";
-            for (size_t s = 0; s < tensor.shape.size(); ++s) {
-                oss << tensor.shape[s] << (s + 1 < tensor.shape.size() ? "," : "");
+            oss << "Tensor(rank=" << tensor.get_rank() << ", shape=[";
+            for (size_t s = 0; s < tensor.get_shape().size(); ++s) {
+                oss << tensor.get_shape()[s] << (s + 1 < tensor.get_shape().size() ? "," : "");
             }
             oss << "], default=";
-            if (tensor.data_type == logds::pg::TensorDataType::INT64) {
-                oss << std::get<int64_t>(tensor.default_value);
+            if (tensor.get_data_type() == logds::pg::TensorDataType::INT64) {
+                oss << std::get<int64_t>(tensor.get_default_value());
             } else {
-                oss << std::get<double>(tensor.default_value);
+                oss << std::get<double>(tensor.get_default_value());
             }
             oss << ")" << separator << "Elements:";
 
-            for (size_t i = 0; i < tensor.coordinates.size(); ++i) {
+            for (size_t i = 0; i < tensor.get_coordinates().size(); ++i) {
                 oss << separator << "  [";
-                for (size_t r = 0; r < tensor.coordinates[i].size(); ++r) {
-                    oss << tensor.coordinates[i][r] << (r + 1 < tensor.coordinates[i].size() ? "," : "");
+                for (size_t r = 0; r < tensor.get_coordinates()[i].size(); ++r) {
+                    oss << tensor.get_coordinates()[i][r] << (r + 1 < tensor.get_coordinates()[i].size() ? "," : "");
                 }
                 oss << "] = ";
-                if (tensor.data_type == logds::pg::TensorDataType::INT64) {
-                    oss << std::get<std::vector<int64_t>>(tensor.values)[i];
+                if (tensor.get_data_type() == logds::pg::TensorDataType::INT64) {
+                    oss << std::get<std::vector<int64_t>>(tensor.get_values())[i];
                 } else {
-                    oss << std::get<std::vector<double>>(tensor.values)[i];
+                    oss << std::get<std::vector<double>>(tensor.get_values())[i];
                 }
             }
         }

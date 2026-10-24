@@ -403,32 +403,52 @@ std::vector<size_t> PropertyGraphStore::get_ingoing_edge_ids(size_t node_id) {
             ss.write(key.data(), key_len);
             uint8_t type_byte = static_cast<uint8_t>(prop_val.type);
             ss.write(reinterpret_cast<const char *>(&type_byte), sizeof(type_byte));
-            if (prop_val.type == PropertyType::SPARSE_TENSOR) {
+                                    if (prop_val.type == PropertyType::SPARSE_TENSOR) {
                 const auto &tensor = std::get<SparseTensor>(prop_val.value);
-                uint8_t dt = static_cast<uint8_t>(tensor.data_type);
+                uint8_t dt = static_cast<uint8_t>(tensor.get_data_type());
                 ss.write(reinterpret_cast<const char *>(&dt), sizeof(dt));
-                ss.write(reinterpret_cast<const char *>(&tensor.rank), sizeof(tensor.rank));
-                ss.write(reinterpret_cast<const char *>(tensor.shape.data()), tensor.rank * sizeof(uint64_t));
-                if (tensor.data_type == TensorDataType::INT64) {
-                    int64_t def = std::get<int64_t>(tensor.default_value);
+
+                // CORREZIONE: Scrittura a 32 bit per preservare il layout binario del db
+                uint32_t t_rank = static_cast<uint32_t>(tensor.get_rank());
+                ss.write(reinterpret_cast<const char *>(&t_rank), sizeof(t_rank));
+
+                // CORREZIONE: Scrittura dei componenti della shape a 32 bit
+                const auto &t_shape = tensor.get_shape();
+                for (size_t s : t_shape) {
+                    uint32_t s32 = static_cast<uint32_t>(s);
+                    ss.write(reinterpret_cast<const char *>(&s32), sizeof(s32));
+                }
+
+                uint64_t num_elements = static_cast<uint64_t>(tensor.get_coordinates().size());
+                if (tensor.get_data_type() == TensorDataType::INT64) {
+                    int64_t def = std::get<int64_t>(tensor.get_default_value());
                     ss.write(reinterpret_cast<const char *>(&def), sizeof(def));
-                    uint64_t num_elements = tensor.coordinates.size();
                     ss.write(reinterpret_cast<const char *>(&num_elements), sizeof(num_elements));
-                    for (const auto &coord: tensor.coordinates)
-                        ss.write(reinterpret_cast<const char *>(coord.data()), tensor.rank * sizeof(uint64_t));
-                    const auto &vals = std::get<std::vector<int64_t> >(tensor.values);
+
+                    for (const auto &coord: tensor.get_coordinates()) {
+                        for (size_t c : coord) {
+                            uint32_t c32 = static_cast<uint32_t>(c);
+                            ss.write(reinterpret_cast<const char *>(&c32), sizeof(c32));
+                        }
+                    }
+                    const auto &vals = std::get<std::vector<int64_t>>(tensor.get_values());
                     ss.write(reinterpret_cast<const char *>(vals.data()), num_elements * sizeof(int64_t));
                 } else {
-                    double def = std::get<double>(tensor.default_value);
+                    double def = std::get<double>(tensor.get_default_value());
                     ss.write(reinterpret_cast<const char *>(&def), sizeof(def));
-                    uint64_t num_elements = tensor.coordinates.size();
                     ss.write(reinterpret_cast<const char *>(&num_elements), sizeof(num_elements));
-                    for (const auto &coord: tensor.coordinates)
-                        ss.write(reinterpret_cast<const char *>(coord.data()), tensor.rank * sizeof(uint64_t));
-                    const auto &vals = std::get<std::vector<double>>(tensor.values);
+
+                    for (const auto &coord: tensor.get_coordinates()) {
+                        for (size_t c : coord) {
+                            uint32_t c32 = static_cast<uint32_t>(c);
+                            ss.write(reinterpret_cast<const char *>(&c32), sizeof(c32));
+                        }
+                    }
+                    const auto &vals = std::get<std::vector<double>>(tensor.get_values());
                     ss.write(reinterpret_cast<const char *>(vals.data()), num_elements * sizeof(double));
                 }
-            } else if (prop_val.type == PropertyType::STRING) {
+            }
+ else if (prop_val.type == PropertyType::STRING) {
                 const auto &str = std::get<std::string>(prop_val.value);
                 uint32_t str_len = static_cast<uint32_t>(str.size());
                 ss.write(reinterpret_cast<const char *>(&str_len), sizeof(str_len));
@@ -471,41 +491,73 @@ std::vector<size_t> PropertyGraphStore::get_ingoing_edge_ids(size_t node_id) {
             PropertyType type = static_cast<PropertyType>(type_byte);
             PropertyValue prop_val;
             prop_val.type = type;
-            if (type == PropertyType::SPARSE_TENSOR) {
-                SparseTensor tensor;
+                                    if (type == PropertyType::SPARSE_TENSOR) {
                 uint8_t dt = 0;
                 ss.read(reinterpret_cast<char *>(&dt), sizeof(dt));
-                tensor.data_type = static_cast<TensorDataType>(dt);
-                ss.read(reinterpret_cast<char *>(&tensor.rank), sizeof(tensor.rank));
-                tensor.shape.resize(tensor.rank);
-                ss.read(reinterpret_cast<char *>(tensor.shape.data()), tensor.rank * sizeof(uint64_t));
-                if (tensor.data_type == TensorDataType::INT64) {
-                    int64_t def;
+                TensorDataType data_type = static_cast<TensorDataType>(dt);
+
+                // CORREZIONE: Leggi il rango come 32 bit per evitare il disallineamento binario
+                uint32_t t_rank_32 = 0;
+                ss.read(reinterpret_cast<char *>(&t_rank_32), sizeof(t_rank_32));
+                size_t t_rank = static_cast<size_t>(t_rank_32);
+
+                // CORREZIONE: Leggi gli elementi della shape come 32 bit coerentemente con il disco
+                std::vector<size_t> shape_vec(t_rank);
+                for (size_t r = 0; r < t_rank; ++r) {
+                    uint32_t s32 = 0;
+                    ss.read(reinterpret_cast<char *>(&s32), sizeof(s32));
+                    shape_vec[r] = static_cast<size_t>(s32);
+                }
+
+                // Invocazione del costruttore parametrizzato controllato
+                SparseTensor tensor(data_type, shape_vec);
+                uint64_t num_elements = 0;
+
+                if (data_type == TensorDataType::INT64) {
+                    int64_t def = 0;
                     ss.read(reinterpret_cast<char *>(&def), sizeof(def));
-                    tensor.default_value = def;
-                    uint64_t num_elements = 0;
+
                     ss.read(reinterpret_cast<char *>(&num_elements), sizeof(num_elements));
-                    tensor.coordinates.resize(num_elements, std::vector<uint64_t>(tensor.rank));
-                    for (uint64_t n = 0; n < num_elements; ++n)
-                        ss.read(reinterpret_cast<char *>(tensor.coordinates[n].data()), tensor.rank * sizeof(uint64_t));
+
+                    // CORREZIONE: Anche le coordinate COO seguono il rango a 32 bit se scritte con la vecchia struttura
+                    std::vector<std::vector<size_t>> temp_coords(num_elements, std::vector<size_t>(t_rank));
+                    for (uint64_t n = 0; n < num_elements; ++n) {
+                        for (size_t r = 0; r < t_rank; ++r) {
+                            uint32_t c32 = 0;
+                            ss.read(reinterpret_cast<char *>(&c32), sizeof(c32));
+                            temp_coords[n][r] = static_cast<size_t>(c32);
+                        }
+                    }
                     std::vector<int64_t> vals(num_elements);
                     ss.read(reinterpret_cast<char *>(vals.data()), num_elements * sizeof(int64_t));
-                    tensor.values = vals;
+
+                    for (uint64_t n = 0; n < num_elements; ++n) {
+                        tensor.set_value(temp_coords[n], vals[n]);
+                    }
                 } else {
-                    double def;
+                    double def = 0.0;
                     ss.read(reinterpret_cast<char *>(&def), sizeof(def));
-                    tensor.default_value = def;
-                    uint64_t num_elements = 0;
+
                     ss.read(reinterpret_cast<char *>(&num_elements), sizeof(num_elements));
-                    tensor.coordinates.resize(num_elements, std::vector<uint64_t>(tensor.rank));
-                    for (uint64_t n = 0; n < num_elements; ++n)
-                        ss.read(reinterpret_cast<char *>(tensor.coordinates[n].data()), tensor.rank * sizeof(uint64_t));
+
+                    std::vector<std::vector<size_t>> temp_coords(num_elements, std::vector<size_t>(t_rank));
+                    for (uint64_t n = 0; n < num_elements; ++n) {
+                        for (size_t r = 0; r < t_rank; ++r) {
+                            uint32_t c32 = 0;
+                            ss.read(reinterpret_cast<char *>(&c32), sizeof(c32));
+                            temp_coords[n][r] = static_cast<size_t>(c32);
+                        }
+                    }
                     std::vector<double> vals(num_elements);
                     ss.read(reinterpret_cast<char *>(vals.data()), num_elements * sizeof(double));
-                    tensor.values = vals;
+
+                    for (uint64_t n = 0; n < num_elements; ++n) {
+                        tensor.set_value(temp_coords[n], vals[n]);
+                    }
                 }
                 prop_val.value = tensor;
-            } else if (type == PropertyType::STRING) {
+            }
+ else if (type == PropertyType::STRING) {
                 uint32_t str_len = 0;
                 ss.read(reinterpret_cast<char *>(&str_len), sizeof(str_len));
                 std::string str(str_len, '\0');

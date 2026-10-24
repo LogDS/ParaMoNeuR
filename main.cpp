@@ -77,13 +77,15 @@ int main() {
         tx1[id_stazione_b]["name"] = "Rome Termini Station";
 
         // Costruzione e inserimento di una proprieta complessa: Tensor Sparso COO
-        logds::pg::SparseTensor matrix;
-        matrix.data_type = logds::pg::TensorDataType::DOUBLE;
-        matrix.rank = 3;                       // Tensore 3D
-        matrix.shape = {100, 100, 50};          // Dimensioni degli assi
-        matrix.default_value = -1.0;            // Valore di background (non zero)
-        matrix.coordinates = { {0, 14, 5}, {85, 2, 41} }; // Elementi non-default espliciti
-        matrix.values = std::vector<double>{ 74.3, 192.8 };
+        logds::pg::SparseTensor matrix({100, 100, 50}, -1.0);
+        // matrix.data_type = logds::pg::TensorDataType::DOUBLE;
+        // matrix.rank = 3;                       // Tensore 3D
+        // matrix.shape = {100, 100, 50};          // Dimensioni degli assi
+        // matrix.default_value = -1.0;            // Valore di background (non zero)
+        matrix.set_value({0, 14, 5}, 74.3);
+        matrix.set_value({85, 2, 41}, 192.8);
+        // matrix.coordinates = { {0, 14, 5}, {85, 2, 41} }; // Elementi non-default espliciti
+        // matrix.values = std::vector<double>{ 74.3, 192.8 };
 
         tx1[id_stazione_a]["traffic_tensor"] = matrix;
 
@@ -156,10 +158,10 @@ int main() {
     logds::pg::PropertyValue p_tensor = tx3[id_stazione_a]["traffic_tensor"];
     logds::pg::SparseTensor r_tensor = std::get<logds::pg::SparseTensor>(p_tensor.value);
 
-    std::cout << "Retrieved Sparse Tensor Rank: " << r_tensor.rank << std::endl;
-    std::cout << "Retrieved Sparse Tensor Background Value: " << std::get<double>(r_tensor.default_value) << std::endl;
+    std::cout << "Retrieved Sparse Tensor Rank: " << r_tensor.get_rank() << std::endl;
+    std::cout << "Retrieved Sparse Tensor Background Value: " << std::get<double>(r_tensor.get_default_value()) << std::endl;
 
-    auto tensor_vals = std::get<std::vector<double>>(r_tensor.values);
+    auto tensor_vals = std::get<std::vector<double>>(r_tensor.get_values());
     std::cout << "Explicit Element [0, 14, 5] Value: " << tensor_vals[0] << std::endl;
     std::cout << "Explicit Element [85, 2, 41] Value: " << tensor_vals[1] << std::endl;
 
