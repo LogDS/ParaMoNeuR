@@ -34,7 +34,7 @@ logds::paramoneur::PruneRulesWhileCollectinMISes::PruneRulesWhileCollectinMISes(
 
 bool logds::paramoneur::PruneRulesWhileCollectinMISes::expandMISOverGroundRule(const UltimateHornRule &r2) {
     bool continua = areGroundedConstraintsSatisfied(r2);
-    std::vector<int> L;
+    std::vector<int64_t> L;
     if (continua) {
         for (const auto& lit : r2.tail) {
             if (!lit.isWeaklyNegated && lit.atom) {
@@ -56,18 +56,18 @@ std::shared_ptr<logds::paramoneur::UltimateHornRule> logds::paramoneur::PruneRul
 removeRulesHavingMisInBody(const UltimateHornRule &rule) {
     auto FV = rule.fvName();
     if (!FV.empty()) {
-        std::vector<int> lFV(FV.begin(), FV.end());
-        std::vector<int> constants{env->constant_idx.begin(), env->constant_idx.end()};
+        std::vector<int64_t> lFV(FV.begin(), FV.end());
+        std::vector<int64_t> constants{env->constant_idx.begin(), env->constant_idx.end()};
         int ruleHavingMIS = 0;
         int countConsidered = 0;
         std::unordered_map<int, std::set<int>> L;
 
-        forEachTuple<int>(constants, lFV.size(), [&](const std::vector<int>& x) {
-            std::unordered_map<int, int> D = zipToMap(lFV, x);
+        forEachTuple<int64_t>(constants, lFV.size(), [&](const std::vector<int64_t>& x) {
+            std::unordered_map<int64_t, int64_t> D = zipToMap(lFV, x);
             UltimateHornRule r2 = env->instantiateRule(rule, D);
             if (areGroundedConstraintsSatisfied(r2)) {
                 ++countConsidered;
-                std::set<int> S;
+                std::set<int64_t> S;
                 for (const auto& lit : r2.tail) {
                     if (!lit.isWeaklyNegated && lit.atom) {
                         S.insert(env->compileAtomToIndex(*lit.atom));
@@ -103,7 +103,7 @@ removeRulesHavingMisInBody(const UltimateHornRule &rule) {
     } else {
         const UltimateHornRule& r2 = rule;
         if (areGroundedConstraintsSatisfied(r2)) {
-            std::set<int> L;
+            std::set<int64_t> L;
             for (const auto& lit : r2.tail) {
                 if (!lit.isWeaklyNegated && lit.atom) {
                     L.insert(env->compileAtomToIndex(*lit.atom));
@@ -134,9 +134,9 @@ bool logds::paramoneur::PruneRulesWhileCollectinMISes::retainRuleAsNonBot(const 
         // 1. se la regola termina con bot, allora tutte le sue possibili instanziazioni danno MIS.
         // (1. if the rule ends with bot, then all its possible instantiations yield MIS.)
         if (!FV.empty()) {
-            std::vector<int> lFV(FV.begin(), FV.end());
-            const std::vector<int> constants{env->constant_idx.begin(), env->constant_idx.end()};
-            forEachTuple<int>(constants, lFV.size(), [&](const std::vector<int>& x) {
+            std::vector<int64_t> lFV(FV.begin(), FV.end());
+            const std::vector<int64_t> constants{env->constant_idx.begin(), env->constant_idx.end()};
+            forEachTuple<int64_t>(constants, lFV.size(), [&](const std::vector<int64_t>& x) {
                 UltimateHornRule r2 = env->instantiateRule(rule, zipToMap(lFV, x));
                 expandMISOverGroundRule(r2);
                 return false;

@@ -5,6 +5,8 @@
 #include <map>
 #include <logds/paramoneur/algorithms/canonical_form.h>
 
+#include "logds/paramoneur/algorithms/unification.h"
+
 // // Element of the body super-pool: kind tag, pointer to the original object, and signature
 struct BodyElement {
     bool isLiteral;
@@ -148,4 +150,25 @@ logds::paramoneur::UltimateHornRule getCanonicalAlphaForm(const logds::paramoneu
 
     return logds::paramoneur::UltimateHornRule{canonicalHead, canonicalTail, finalReconstructedConstraints,
         rule.isIntegrityConstraint, rule.weight};
+}
+
+std::vector<int64_t> prune_equivalent_rules_before_tensor_idx(
+    const std::vector<logds::paramoneur::UltimateHornRule> &rule_list) {
+    std::vector<logds::paramoneur::UltimateHornRule> canonical_rules;
+    std::transform(rule_list.begin(), rule_list.end(), std::back_inserter(canonical_rules), getCanonicalAlphaForm);
+    std::vector<int64_t> unique_retained_rules;
+    for (uint64_t idx = 0; idx < canonical_rules.size(); ++idx) {
+        bool isDuplicate = false;
+        const auto& current_rule = canonical_rules[idx];
+        for (const auto& idx_rule : unique_retained_rules) {
+            if (logds::paramoneur::haveRulesSameBodyAndCompatibleHead(current_rule, rule_list[idx_rule], true).has_value()) {
+                isDuplicate = true;
+                break;
+            }
+        }
+        if (!isDuplicate) {
+            unique_retained_rules.emplace_back(idx);
+        }
+    }
+    return unique_retained_rules;
 }

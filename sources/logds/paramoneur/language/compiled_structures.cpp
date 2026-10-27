@@ -21,7 +21,7 @@ std::shared_ptr<logds::paramoneur::ConcreteStructures> logds::paramoneur::Argume
     return std::make_shared<StrArgument>(type, name);
 }
 
-logds::paramoneur::ArbitraryAtom::ArbitraryAtom(int sign, int predicate, const std::vector<Argument> &args,
+logds::paramoneur::ArbitraryAtom::ArbitraryAtom(int64_t sign, int64_t predicate, const std::vector<Argument> &args,
                                                 const std::string &name): sign(sign),
                                                                           predicate(predicate),
                                                                           args(args),

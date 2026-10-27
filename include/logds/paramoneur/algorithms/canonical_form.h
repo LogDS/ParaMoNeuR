@@ -56,5 +56,6 @@
  */
 logds::paramoneur::UltimateHornRule getCanonicalAlphaForm(const logds::paramoneur::UltimateHornRule& rule);
 
+std::vector<int64_t> prune_equivalent_rules_before_tensor_idx(const std::vector<logds::paramoneur::UltimateHornRule>& rule_list);
 
 #endif //PARAMONEUR2_CANONICAL_FORM_H

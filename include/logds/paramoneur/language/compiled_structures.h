@@ -19,21 +19,21 @@ namespace logds::paramoneur {
         virtual std::set<int> fvName() const  = 0;
         virtual std::shared_ptr<ConcreteStructures> strType() const = 0;
         virtual int64_t arity() const { return -1; }
-        virtual std::set<int> variables() const { return {}; }
+        virtual std::set<int64_t> variables() const { return {}; }
     };
 
     struct Argument : public CompiledStructure {
         ArgType type;
-        int id;
+        int64_t id;
         std::string name;
 
-        Argument(ArgType type, int id, const std::string &name)
+        Argument(ArgType type, int64_t id, const std::string &name)
             : type(type),
               id(id),
               name(name) {
         }
 
-        Argument(const std::string &name, int id,ArgType type )
+        Argument(const std::string &name, int64_t id,ArgType type )
             : type(type),
               id(id),
               name(name) {
@@ -48,7 +48,7 @@ namespace logds::paramoneur {
             return -1;
         }
 
-        std::set<int> variables() const override {
+        std::set<int64_t> variables() const override {
             if (type == ArgType::Variable) {
                 return {id};
             }
@@ -57,12 +57,12 @@ namespace logds::paramoneur {
     };
 
     struct ArbitraryAtom : public  CompiledStructure {
-        int sign;
-        int predicate;
+        int64_t sign;
+        int64_t predicate;
         std::vector<Argument> args{};
         std::string name{};
 
-        ArbitraryAtom(int sign, int predicate, const std::vector<Argument> &args, const std::string &name);
+        ArbitraryAtom(int64_t sign, int64_t predicate, const std::vector<Argument> &args, const std::string &name);
 
         ArbitraryAtom negated() const;
         ArbitraryAtom affirmative() const;
@@ -74,10 +74,10 @@ namespace logds::paramoneur {
             return args.size();
         }
 
-        std::set<int> variables() const override {
-                std::set<int> s;
+        std::set<int64_t> variables() const override {
+                std::set<int64_t> s;
                 for (const auto& x : args) {
-                    const std::set<int> part = x.variables();
+                    const std::set<int64_t> part = x.variables();
                     s.insert(part.begin(), part.end());
                 }
                 return s;
@@ -109,8 +109,8 @@ namespace logds::paramoneur {
         // Returns std::nullopt where Python would raise AttributeError (atom is None).
         std::shared_ptr<ConcreteStructures> strType() const override;
 
-        std::set<int> variables() const override {
-            return atom ? atom->variables() : std::set<int>{};
+        std::set<int64_t> variables() const override {
+            return atom ? atom->variables() : std::set<int64_t>{};
         }
     };
 
@@ -144,9 +144,9 @@ namespace logds::paramoneur {
 
         std::shared_ptr<ConcreteStructures> strType() const override;
 
-        std::set<int> variables() const override {
-            std::set<int> s = left.variables();
-            const std::set<int> rightVars = right.variables();
+        std::set<int64_t> variables() const override {
+            std::set<int64_t> s = left.variables();
+            const std::set<int64_t> rightVars = right.variables();
             s.insert(rightVars.begin(), rightVars.end());
             return s;
         }
@@ -198,14 +198,14 @@ struct UltimateHornRule : public CompiledStructure {
         return result;
     }
 
-    std::set<int> variables() const override {
-        std::set<int> s = head.variables();
+    std::set<int64_t> variables() const override {
+        std::set<int64_t> s = head.variables();
         for (const auto& x :tail) {
-            const std::set<int> part = x.variables();
+            const std::set<int64_t> part = x.variables();
             s.insert(part.begin(), part.end());
         }
         for (const auto& x : constraints) {
-            const std::set<int> part = x.variables();
+            const std::set<int64_t> part = x.variables();
             s.insert(part.begin(), part.end());
         }
         return s;

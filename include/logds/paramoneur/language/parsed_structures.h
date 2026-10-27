@@ -37,7 +37,7 @@ namespace logds::paramoneur {
         std::string predicate;
         std::vector<StrArgument> args{};
 
-        StrAtom(bool is_negated, const std::string &predicate, const std::vector<StrArgument> &args)
+        constexpr StrAtom(bool is_negated, const std::string &predicate, const std::vector<StrArgument> &args)
             : isNegated(is_negated),
               predicate(predicate),
               args(args) {
@@ -126,6 +126,7 @@ namespace logds::paramoneur {
         }
     };
 
+    constexpr static StrAtom bot = StrAtom(false, std::string(kBotSymbol), {});
 }
 
 

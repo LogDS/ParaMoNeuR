@@ -1,12 +1,29 @@
 cmake_minimum_required(VERSION 4.0)
-project(Paramoneur2 LANGUAGES CXX CUDA) # RISOLUTIVO: Abilita CUDA come linguaggio nativo
+project(Paramoneur2 LANGUAGES C CXX CUDA) # RISOLUTIVO: Abilita CUDA come linguaggio nativo
 
 # 1. Configurazione dello Standard C++20 / C++26 per Host e Device
-set(CMAKE_CXX_STANDARD 23)
+#set(CMAKE_CXX_STANDARD 23)
+#set(CMAKE_CXX_STANDARD_REQUIRED ON)
+#set(CMAKE_CUDA_STANDARD 23)
+#set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+# Forza C++17 e CUDA17 (standard stabili e supportati globalmente)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CUDA_STANDARD 23)
-set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF) # IMPORTANTE: Impedisce a CMake di cercare estensioni C++23 instabili
 
+set(CMAKE_CUDA_STANDARD 17)
+set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+set(CMAKE_CUDA_EXTENSIONS OFF) # IMPORTANTE: Risolve l'errore "requires the language dialect CUDA23"
+
+# Rileva automaticamente l'architettura della GPU (es. sm_75, sm_80, ecc.)
+set(CMAKE_CUDA_ARCHITECTURES native)
+
+
+include_directories(submodules/yaucl/submodules/antlr4/runtime/Cpp/runtime/src)
+include_directories(sources/antlr4)
+include_directories(submodules/yaucl/submodules/json/include)
+add_subdirectory(submodules/yaucl/submodules/antlr4/runtime/Cpp)
 
 # 2. Localizzazione del CUDA Toolkit (Contiene CCCL di default)
 find_package(CUDAToolkit REQUIRED)
@@ -50,6 +67,17 @@ include_directories(include)
 include_directories(submodules/yaucl/include)
 include_directories(submodules/field-reflection/include)
 
+add_library(yaucl_hashing OBJECT
+        submodules/yaucl/include/yaucl/hashing/evaluateHashes.h
+        submodules/yaucl/src/yaucl/hashing/evaluateHashes.c
+        submodules/yaucl/src/yaucl/hashing/hash_combine.cpp
+        submodules/yaucl/include/yaucl/hashing/hash_combine.h
+        submodules/yaucl/src/yaucl/hashing/hashing.cpp
+        submodules/yaucl/include/yaucl/hashing/hashing.h
+        submodules/yaucl/include/yaucl/hashing/pair_hash.h
+        submodules/yaucl/include/yaucl/hashing/vector_hash.h
+        submodules/yaucl/include/yaucl/hashing/uset_hash.h)
+
 add_executable(Paramoneur2 main.cpp
         sources/logds/paramoneur/algorithms/canonical_form.cpp
         sources/logds/paramoneur/algorithms/unification.cpp
@@ -71,9 +99,39 @@ add_executable(Paramoneur2 main.cpp
         include/logds/paramoneur/propertygraph/pg_store.h
         sources/logds/paramoneur/propertygraph/pg_store.cpp
         sources/logds/paramoneur/propertygraph/pg.cpp
-        SparseTensor.cpp
-        include/logds/paramoneur/types/SparseTensor.h)
+        sources/logds/paramoneur/types/SparseTensor.cpp
+        include/logds/paramoneur/types/SparseTensor.h
+
+
+
+        sources/antlr4/extended_prologBaseListener.cpp
+        sources/antlr4/extended_prologBaseVisitor.cpp
+        sources/antlr4/extended_prologLexer.cpp
+        sources/antlr4/extended_prologListener.cpp
+        sources/antlr4/extended_prologParser.cpp
+        sources/antlr4/extended_prologVisitor.cpp
+        sources/logds/paramoneur/language/VisitProlog.cpp
+        include/logds/paramoneur/language/VisitProlog.h
+        sources/logds/paramoneur/environment/DatasetBuilder.cpp
+        include/logds/paramoneur/environment/DatasetBuilder.h
+)
 target_link_libraries(Paramoneur2 CUDA::cutensor
         CUDA::cudart             # Runtime di CUDA (Richiesto da CCCL/Thrust)
         CUDA::cuda_driver        # Driver CUDA core
+        antlr4_static
+        yaucl_hashing
     )
+
+add_executable(cuda_select_demo
+        example_prln.cpp
+        sources/logds/paramoneur/engine/prln_step.cu
+        include/logds/paramoneur/engine/prln_step.cuh
+)
+set_target_properties(cuda_select_demo PROPERTIES
+        CUDA_SEPARABLE_COMPILATION OFF
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED ON
+        CUDA_STANDARD 17
+        CUDA_STANDARD_REQUIRED ON
+        CUDA_SEPARABLE_COMPILATION OFF
+)

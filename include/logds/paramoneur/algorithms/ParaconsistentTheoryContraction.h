@@ -5,6 +5,8 @@
 #ifndef PARAMONEUR2_PARACONSISTENTTHEORYCONTRACTION_H
 #define PARAMONEUR2_PARACONSISTENTTHEORYCONTRACTION_H
 #include <set>
+#include <yaucl/hashing/vector_hash.h>
+#include <unordered_set>
 #include <vector>
 
 #include "logds/paramoneur/language/compiled_structures.h"
@@ -14,7 +16,7 @@ namespace logds::paramoneur {
 
     class PruneRulesWhileCollectinMISes {
 public:
-    std::set<std::vector<int>> MIS;
+    std::unordered_set<std::vector<int64_t>> MIS;
     GlobalEnvironmentProxy* env;
 
     PruneRulesWhileCollectinMISes();

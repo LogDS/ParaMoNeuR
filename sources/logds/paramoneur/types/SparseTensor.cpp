@@ -2,7 +2,7 @@
 // Created by gyankos on 24/10/26.
 //
 
-#include "include/logds/paramoneur/types/SparseTensor.h"
+#include "logds/paramoneur/types/SparseTensor.h"
 
 namespace logds::types {
     SparseTensor::SparseTensor(): data_type(TensorDataType::DOUBLE), rank(0), default_value(0.0) {}
