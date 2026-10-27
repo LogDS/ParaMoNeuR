@@ -10,7 +10,7 @@ logds::paramoneur::VarOrConst logds::paramoneur::Argument::varOrConstInternalRep
     return type == ArgType::Constant ? VarOrConst(id) : VarOrConst(name);
 }
 
-std::set<int> logds::paramoneur::Argument::fvName() const {
+std::set<int64_t> logds::paramoneur::Argument::fvName() const {
     if (type == logds::paramoneur::ArgType::Constant) {
         return {};
     }
@@ -55,13 +55,13 @@ std::shared_ptr<logds::paramoneur::ConcreteStructures> logds::paramoneur::Arbitr
     return std::make_shared<StrAtom>(sign == kSignStrongNeg, name, std::move(converted));
 }
 
-std::set<int> logds::paramoneur::ArbitraryAtom::fvName() const {
+std::set<int64_t> logds::paramoneur::ArbitraryAtom::fvName() const {
     if (args.empty()) {
         return {};
     }
-    std::set<int> result;
+    std::set<int64_t> result;
     for (const auto& arg : args) {
-        const std::set<int> part = arg.fvName();
+        const std::set<int64_t> part = arg.fvName();
         result.insert(part.begin(), part.end());
     }
     return result;

@@ -6,6 +6,7 @@
 #define PARAMONEUR2_COMPILED_STRUCTURES_H
 #include <memory>
 #include <set>
+#include <optional>
 #include <unordered_map>
 
 #include "parsed_structures.h"
@@ -16,7 +17,7 @@ namespace logds::paramoneur {
     struct  ConcreteStructures;
 
     struct CompiledStructure {
-        virtual std::set<int> fvName() const  = 0;
+        virtual std::set<int64_t> fvName() const  = 0;
         virtual std::shared_ptr<ConcreteStructures> strType() const = 0;
         virtual int64_t arity() const { return -1; }
         virtual std::set<int64_t> variables() const { return {}; }
@@ -41,7 +42,7 @@ namespace logds::paramoneur {
 
 
         VarOrConst varOrConstInternalRepr() const;
-        std::set<int> fvName() const override;
+        std::set<int64_t> fvName() const override;
         std::shared_ptr<ConcreteStructures> strType() const override;
 
         int64_t arity() const override {
@@ -68,7 +69,7 @@ namespace logds::paramoneur {
         ArbitraryAtom affirmative() const;
         std::pair<int, ArbitraryAtom> asSignAndPositiveAtom() const;
         std::shared_ptr<ConcreteStructures> strType() const override;
-        std::set<int> fvName() const override;
+        std::set<int64_t> fvName() const override;
 
         int64_t arity() const override {
             return args.size();
@@ -102,8 +103,8 @@ namespace logds::paramoneur {
               isWeaklyNegated(is_weakly_negated) {
         }
 
-        std::set<int> fvName() const override {
-            return atom ? atom->fvName() : std::set<int>{};
+        std::set<int64_t> fvName() const override {
+            return atom ? atom->fvName() : std::set<int64_t>{};
         }
 
         // Returns std::nullopt where Python would raise AttributeError (atom is None).
@@ -135,9 +136,9 @@ namespace logds::paramoneur {
             return true;
         }
 
-        std::set<int> fvName() const override{
-            std::set<int> result = left.fvName();
-            const std::set<int> rightNames = right.fvName();
+        std::set<int64_t> fvName() const override{
+            auto result = left.fvName();
+            const auto rightNames = right.fvName();
             result.insert(rightNames.begin(), rightNames.end());
             return result;
         }
@@ -185,14 +186,14 @@ struct UltimateHornRule : public CompiledStructure {
         return a;
     }
 
-    std::set<int> fvName() const override {
-        std::set<int> result = head.fvName();
+    std::set<int64_t> fvName() const override {
+        auto result = head.fvName();
         for (const auto& literal : tail) {
-            const std::set<int> part = literal.fvName();
+            const auto part = literal.fvName();
             result.insert(part.begin(), part.end());
         }
         for (const auto& constraint : constraints) {
-            const std::set<int> part = constraint.fvName();
+            const auto part = constraint.fvName();
             result.insert(part.begin(), part.end());
         }
         return result;

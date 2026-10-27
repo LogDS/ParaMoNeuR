@@ -9,6 +9,12 @@
 #include <variant>
 #include <vector>
 #include <cmath>
+#include <functional>
+#include <string>
+
+// Tipo consolidato per la decodifica testuale delle coordinate: (dim_id, coord_index) -> stringa
+using LabelProvider = std::function<std::string(int64_t, int64_t)>;
+
 
 namespace logds::types {
 
@@ -50,6 +56,29 @@ public:
 
     // Estrazione pulita di un elemento (Ritorna il valore se presente nelle coordinate, altrimenti il default)
     TensorValueVariant get_value(const std::vector<size_t>& coord) const;
+
+    // Converte questo tensore coo in una matrice 2-dimensionale efficiente per cuda in rappresentazione CSR
+    void convert_nested_coo_to_csr_cpu(
+        std::vector<int>& csrRowPtr,                 // Output puntatori di riga (dim: num_rows + 1)
+        std::vector<int>& csrColInd                  // Output indici di colonna (dim: nnz)
+    );
+
+    // 1) Funzione che salva lo stack di heatmaps su file senza effettuare il rendering a schermo
+void save_tensor_heatmaps_to_file(
+    const std::string& output_filepath,
+    const LabelProvider& label_provider);
+
+    // 3) Funzione per plottare la tabella strutturata a terminale via p-ranav/tabulate
+void terminal_plot_mytensor(
+    double threshold,
+    const LabelProvider& label_provider);
+
+
+    // Helper per convertire i dati sparsi di Mytensor relativi a una specifica slice 2D in una matrice densa per Matplot++
+    std::vector<std::vector<double>> extract_2d_slice(
+        const std::vector<size_t>& current_dims,
+        size_t dim_h, size_t dim_w,
+        size_t size_h, size_t size_w);
 
 protected:
     // 3. CAMPI PROTETTI ACCESSIBILI SOLO TRAMITE GETTER/SETTER CONTROLLATI

@@ -10,6 +10,16 @@
 
 namespace logds {
     namespace paramoneur {
+        Dataset::~Dataset() = default;
+        Dataset::Dataset(const std::vector<UltimateHornRule> &raw_rules,
+            const std::vector<std::pair<ArbitraryAtom, double>> &raw_kb, const std::vector<HornRule> &string_rules,
+            const std::vector<StrAtom> &string_kb, const std::vector<double> &string_weights): raw_rules(raw_rules),
+            raw_kb(raw_kb),
+            string_rules(string_rules),
+            string_kb(string_kb),
+            string_weights(string_weights) {
+        }
+
         GlobalEnvironmentProxy * Dataset::env() {
             return &GlobalEnvironmentProxy::getInstance();
         }
@@ -86,7 +96,7 @@ namespace logds {
             Dataset dataset_instance(pp, t, M, kb, w);
             dataset_instance.post_process_rules();
 
-            env.addDataset(dataset_instance);
+            env.addDataset(&dataset_instance);
             return dataset_instance;
         }
 

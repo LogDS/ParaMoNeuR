@@ -122,7 +122,7 @@ removeRulesHavingMisInBody(const UltimateHornRule &rule) {
 }
 
 bool logds::paramoneur::PruneRulesWhileCollectinMISes::retainRuleAsNonBot(const UltimateHornRule &rule) {
-    std::set<int> FV = rule.fvName();
+    std::set<int64_t> FV = rule.fvName();
 
     for (const auto& x : rule.tail) {
         if (x.isWeaklyNegated) {

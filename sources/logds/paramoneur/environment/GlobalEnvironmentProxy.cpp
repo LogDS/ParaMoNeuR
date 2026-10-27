@@ -2,11 +2,15 @@
 // Created by gyankos on 22/10/26.
 //
 
-#include "logds/paramoneur/environment/GlobalEnvironmentProxy.h"
+#include <logds/paramoneur/environment/GlobalEnvironmentProxy.h>
 #include "logds/paramoneur/environment/DatasetBuilder.h"
+
 #include "logds/paramoneur/algorithms/indexing.h"
 
 namespace logds::paramoneur {
+    GlobalEnvironmentProxy::GlobalEnvironmentProxy() = default;
+    GlobalEnvironmentProxy::~GlobalEnvironmentProxy() = default;
+
     std::optional<Argument> GlobalEnvironmentProxy::atomFromName(const std::string &id,
                                                                  bool isVarConstantOtherwise) const {
         if (!isVarConstantOtherwise) {
@@ -48,12 +52,12 @@ namespace logds::paramoneur {
         if (std::holds_alternative<std::string>(a)) {
             argA = atomFromName(std::get<std::string>(a), true);
         } else {
-            argA = atomFromId(std::get<int>(a), false);
+            argA = atomFromId(std::get<int64_t>(a), false);
         }
         if (std::holds_alternative<std::string>(b)) {
             argB = atomFromName(std::get<std::string>(b), true);
         } else {
-            argB = atomFromId(std::get<int>(b), false);
+            argB = atomFromId(std::get<int64_t>(b), false);
         }
         assert(argA && argB);
         return EqualityConstraint{argA.value(), argB.value(), c};
@@ -63,8 +67,8 @@ namespace logds::paramoneur {
         return compile_atom_to_index_param(g_atom, max_B(), max_L(), kStopToken);
     }
 
-    void GlobalEnvironmentProxy::addDataset(const Dataset &dataset) {
-        datasets.emplace_back(dataset);
+    void GlobalEnvironmentProxy::addDataset(const Dataset* dataset) {
+        datasets.emplace_back(*dataset);
     }
 
     Argument GlobalEnvironmentProxy::

@@ -18,9 +18,15 @@ namespace logds::paramoneur {
         std::vector<HornRule> string_rules;
         std::vector<StrAtom> string_kb;
         std::vector<double> string_weights;
+
+        ~Dataset();
+        Dataset(const std::vector<UltimateHornRule> &raw_rules,
+            const std::vector<std::pair<ArbitraryAtom, double>> &raw_kb, const std::vector<HornRule> &string_rules,
+            const std::vector<StrAtom> &string_kb, const std::vector<double> &string_weights);
+
         bool is_pp_alpha{false};
-        std::unordered_map<uint64_t, std::vector<uint64_t>> rule_bodies_map;
-        std::unordered_set<std::vector<int64_t>> MIS;
+        std::unordered_map<uint64_t, std::vector<uint64_t>> rule_bodies_map{};
+        std::unordered_set<std::vector<int64_t>> MIS{};
 
         static GlobalEnvironmentProxy* env();
         bool empty() const { return string_kb.empty() && string_rules.empty(); }

@@ -14,7 +14,7 @@ namespace logds::paramoneur {
     // Type aliases and small helpers
     // ---------------------------------------------------------------------------
     using FlatIndex = std::int64_t;
-    using VarOrConst = std::variant<int, std::string>;
+    using VarOrConst = std::variant<int64_t, std::string>;
     using ConstraintTriplet = std::tuple<VarOrConst, VarOrConst, bool>;
 }
 

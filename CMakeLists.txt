@@ -8,7 +8,7 @@ project(Paramoneur2 LANGUAGES C CXX CUDA) # RISOLUTIVO: Abilita CUDA come lingua
 #set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 # Forza C++17 e CUDA17 (standard stabili e supportati globalmente)
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF) # IMPORTANTE: Impedisce a CMake di cercare estensioni C++23 instabili
 
@@ -23,7 +23,11 @@ set(CMAKE_CUDA_ARCHITECTURES native)
 include_directories(submodules/yaucl/submodules/antlr4/runtime/Cpp/runtime/src)
 include_directories(sources/antlr4)
 include_directories(submodules/yaucl/submodules/json/include)
+include_directories(submodules/matplotpp/source)
+include_directories(submodules/tabulate/include)
+
 add_subdirectory(submodules/yaucl/submodules/antlr4/runtime/Cpp)
+add_subdirectory(submodules/matplotpp)
 
 # 2. Localizzazione del CUDA Toolkit (Contiene CCCL di default)
 find_package(CUDAToolkit REQUIRED)
@@ -120,6 +124,7 @@ target_link_libraries(Paramoneur2 CUDA::cutensor
         CUDA::cuda_driver        # Driver CUDA core
         antlr4_static
         yaucl_hashing
+        Matplot++::matplot
     )
 
 add_executable(cuda_select_demo

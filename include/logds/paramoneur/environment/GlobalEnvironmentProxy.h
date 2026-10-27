@@ -23,7 +23,8 @@ namespace logds::paramoneur {
     // TODO: this is just a STUB method!
     // ---------------------------------------------------------------------------
     class GlobalEnvironmentProxy {
-        GlobalEnvironmentProxy() {}
+        GlobalEnvironmentProxy();
+        ~GlobalEnvironmentProxy();
 
         int64_t get_or_create_predicate_id(const std::string& clean_name) {
             if (clean_name == kBotSymbol) {
@@ -74,7 +75,7 @@ namespace logds::paramoneur {
     public:
         // Singleton accessor (provided by the paramoneur global environment module).
         static GlobalEnvironmentProxy& getInstance() {
-            static GlobalEnvironmentProxy instance;
+            static GlobalEnvironmentProxy instance{};
             if (!instance.init) {
                 instance.predicates_map[std::string(kBotSymbol)] = kPredicateFalsehood;
                 instance.reverse_predicates_map[kPredicateFalsehood] = std::string(kBotSymbol);
@@ -82,8 +83,6 @@ namespace logds::paramoneur {
             }
             return instance;
         }
-        ~GlobalEnvironmentProxy() = default;
-
         std::optional<Argument> atomFromName(const std::string& id, bool isVarConstantOtherwise = true) const;
         std::optional<Argument> atomFromId(int id, bool isVarConstantOtherwise = true) const;
 
@@ -100,7 +99,7 @@ namespace logds::paramoneur {
             return max_arity+2;
         }
 
-        void addDataset(const Dataset & dataset);
+        void addDataset(const Dataset* dataset);
 
         void groundAtom(const ArbitraryAtom & atom, std::vector<ArbitraryAtom>& result) {
             auto allVarIds = atom.fvName();

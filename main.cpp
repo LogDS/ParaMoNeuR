@@ -262,4 +262,30 @@ int main() {
     }
 
     std::cout << "\nAll storage engine, reflection, type-checking and networkx constraints verified." << std::endl;
+    logds::types::SparseTensor tensor({2,3,4}, (int64_t)0LL);
+    tensor.set_value({0, 0, 1}, 200);
+    tensor.set_value({0, 1, 2}, 400);
+    tensor.set_value({1, 2, 3}, 880);
+
+    // Definizione del LabelProvider testuale custom per decodificare gli indici
+    LabelProvider my_labels = [](size_t dim_id, size_t coord_index) -> std::string {
+        if (dim_id == 0) {
+            return (coord_index == 0) ? "MilanoP" : "RomaP";
+        } else if (dim_id == 1) {
+            std::vector<std::string> reparti = {"Logistica", "Produzione", "ControlloQualità"};
+            return (coord_index < reparti.size()) ? reparti[coord_index] : "Rep_" + std::to_string(coord_index);
+        } else if (dim_id == 2) {
+            std::vector<std::string> prodotti = {"A", "B", "C", "DD"};
+            return (coord_index < prodotti.size()) ? prodotti[coord_index] : "L\\_" + std::to_string(coord_index);
+        }
+        return "D" + std::to_string(dim_id) + "\\_Idx" + std::to_string(coord_index);
+    };
+
+    // ESECUZIONE PARTE 1) e 2): Salvataggio headless del grafico su file locale PNG
+    tensor.save_tensor_heatmaps_to_file("output_tensor_stack.png", my_labels);
+
+    // ESECUZIONE PARTE 3): Plotting tabellare a terminale tramite tabulate filtrando con soglia t = 5.0
+    std::cout << "\n--- RENDERING TABELLA CON TABULATE (Filtro t > 5.0) ---";
+    tensor.terminal_plot_mytensor(5.0, my_labels);
+
 }
