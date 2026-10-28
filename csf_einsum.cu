@@ -656,51 +656,164 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
         if (abort) exit(code);
     }
 }
+//
+// /**
+//  * Functor strutturato esplicito per l'ordinamento lessicografico su GPU.
+//  * Sostituisce la lambda anonima eliminando l'errore di relaxed-constexpr.
+//  */
+// struct RowComparator {
+//     int* d_coords;
+//     int order;
+//
+//     // Il costruttore viene eseguito su Host per agganciare i metadati
+//     RowComparator(int* _d_coords, int _order) : d_coords(_d_coords), order(_order) {}
+//
+//     // L'operatore di confronto viene marcato esplicitamente come __device__ puro
+//     __device__ inline bool operator()(const int& idx_A, const int& idx_B) const {
+//         for (int d = 0; d < order; ++d) {
+//             int c_A = d_coords[idx_A * order + d];
+//             int c_B = d_coords[idx_B * order + d];
+//             if (c_A != c_B) {
+//                 return c_A < c_B;
+//             }
+//         }
+//         return false;
+//     }
+// };
+//
+// /**
+//  * Kernel CUDA ausiliario per applicare la permutazione calcolata da Thrust.
+//  */
+// __global__ void apply_permutation_kernel(
+//     const int* __restrict__ d_permutation_indices,
+//     const int* __restrict__ d_src_coords,
+//     const float* __restrict__ d_src_vals,
+//     int* __restrict__ d_dst_coords,
+//     float* __restrict__ d_dst_vals,
+//     int nnz,
+//     int order)
+// {
+//     int current_pos = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (current_pos >= nnz) return;
+//
+//     int orig_idx = d_permutation_indices[current_pos];
+//     d_dst_vals[current_pos] = d_src_vals[orig_idx];
+//
+//     for (int d = 0; d < order; ++d) {
+//         d_dst_coords[current_pos * order + d] = d_src_coords[orig_idx * order + d];
+//     }
+// }
+//
+// UniversalCSF build_universal_csf_from_coo(const std::vector<RawCOOElement>& raw_elements, int tensor_order) {
+//     UniversalCSF csf{};
+//     csf.order = tensor_order;
+//     csf.nnz = static_cast<int>(raw_elements.size());
+//
+//     if (csf.nnz == 0) {
+//         csf.d_unified_buffer = nullptr;
+//         csf.d_vals = nullptr;
+//         csf.d_coordinate_matrix = nullptr;
+//         return csf;
+//     }
+//
+//     // 1. Allocazione del buffer unificato su GPU per accogliere la copia grezza
+//     size_t vals_bytes = csf.nnz * sizeof(float);
+//     size_t coords_bytes = csf.nnz * tensor_order * sizeof(int);
+//     csf.total_buffer_bytes = vals_bytes + coords_bytes;
+//
+//     std::vector<char> h_unified_buffer(csf.total_buffer_bytes);
+//     float* h_vals_ptr = reinterpret_cast<float*>(h_unified_buffer.data());
+//     int* h_coords_ptr = reinterpret_cast<int*>(h_unified_buffer.data() + vals_bytes);
+//
+//     // Copia lineare speculare Host
+//     for (int n = 0; n < csf.nnz; ++n) {
+//         h_vals_ptr[n] = raw_elements[n].val;
+//         for (int d = 0; d < tensor_order; ++d) {
+//             h_coords_ptr[n * tensor_order + d] = raw_elements[n].coords[d];
+//         }
+//     }
+//
+//     CUDA_CHECK(cudaMalloc(&csf.d_unified_buffer, csf.total_buffer_bytes));
+//     CUDA_CHECK(cudaMemcpy(csf.d_unified_buffer, h_unified_buffer.data(), csf.total_buffer_bytes, cudaMemcpyHostToDevice));
+//
+//     char* d_byte_base = reinterpret_cast<char*>(csf.d_unified_buffer);
+//     csf.d_vals = reinterpret_cast<float*>(d_byte_base);
+//     csf.d_coordinate_matrix = reinterpret_cast<int*>(d_byte_base + vals_bytes);
+//
+//     // =========================================================================
+//     // ORDINAMENTO PARALLELO TRAMITE FUNCTOR STRUTTURATO
+//     // =========================================================================
+//     int* d_permutation_indices;
+//     CUDA_CHECK(cudaMalloc(&d_permutation_indices, csf.nnz * sizeof(int)));
+//
+//     thrust::device_ptr<int> thr_perm_ptr(d_permutation_indices);
+//     thrust::sequence(thrust::device, thr_perm_ptr, thr_perm_ptr + csf.nnz);
+//
+//     // Istanziamo l'operatore esplicito passando l'indirizzo VRAM e il rango
+//     RowComparator comp(csf.d_coordinate_matrix, csf.order);
+//
+//     // L'invocazione ora è sicura al 100% per nvcc poiché il functor non viola i vincoli di contesto
+//     thrust::sort(thrust::device, thr_perm_ptr, thr_perm_ptr + csf.nnz, comp);
+//
+//     // Allocazione temporanea di appoggio per la riorganizzazione in-place su device
+//     int* d_sorted_coords;
+//     float* d_sorted_vals;
+//     CUDA_CHECK(cudaMalloc(&d_sorted_coords, coords_bytes));
+//     CUDA_CHECK(cudaMalloc(&d_sorted_vals, vals_bytes));
+//
+//     // Invocazione del kernel custom di riallineamento parallelo
+//     int threads = 256;
+//     int blocks = (csf.nnz + threads - 1) / threads;
+//     apply_permutation_kernel<<<blocks, threads>>>(
+//         d_permutation_indices,
+//         csf.d_coordinate_matrix,
+//         csf.d_vals,
+//         d_sorted_coords,
+//         d_sorted_vals,
+//         csf.nnz,
+//         csf.order
+//     );
+//     CUDA_CHECK(cudaDeviceSynchronize());
+//
+//     // Copia Device-to-Device ad altissima banda
+//     CUDA_CHECK(cudaMemcpy(csf.d_vals, d_sorted_vals, vals_bytes, cudaMemcpyDeviceToDevice));
+//     CUDA_CHECK(cudaMemcpy(csf.d_coordinate_matrix, d_sorted_coords, coords_bytes, cudaMemcpyDeviceToDevice));
+//
+//     // Rilascio risorse
+//     cudaFree(d_permutation_indices);
+//     cudaFree(d_sorted_coords);
+//     cudaFree(d_sorted_vals);
+//
+//     return csf;
+// }
 
+#include <thrust/device_ptr.h>
+#include <thrust/sort.h>
+#include <thrust/execution_policy.h>
+#include "csf_einsum.cuh"
+
+#ifdef CPULOAD
 /**
- * Functor strutturato esplicito per l'ordinamento lessicografico su GPU.
- * Sostituisce la lambda anonima eliminando l'errore di relaxed-constexpr.
+ * Kernel CUDA ultra-rapido per spacchettare la chiave a 64 bit riordinata
+ * e ricostruire la d_coordinate_matrix finale a valle del Radix Sort.
  */
-struct RowComparator {
-    int* d_coords;
-    int order;
-
-    // Il costruttore viene eseguito su Host per agganciare i metadati
-    RowComparator(int* _d_coords, int _order) : d_coords(_d_coords), order(_order) {}
-
-    // L'operatore di confronto viene marcato esplicitamente come __device__ puro
-    __device__ inline bool operator()(const int& idx_A, const int& idx_B) const {
-        for (int d = 0; d < order; ++d) {
-            int c_A = d_coords[idx_A * order + d];
-            int c_B = d_coords[idx_B * order + d];
-            if (c_A != c_B) {
-                return c_A < c_B;
-            }
-        }
-        return false;
-    }
-};
-
-/**
- * Kernel CUDA ausiliario per applicare la permutazione calcolata da Thrust.
- */
-__global__ void apply_permutation_kernel(
-    const int* __restrict__ d_permutation_indices,
-    const int* __restrict__ d_src_coords,
-    const float* __restrict__ d_src_vals,
+__global__ void unpack_coordinates_kernel(
+    const uint64_t* __restrict__ d_sorted_keys,
     int* __restrict__ d_dst_coords,
-    float* __restrict__ d_dst_vals,
     int nnz,
-    int order)
+    int order,
+    const int* __restrict__ d_dim_sizes) // Dimensioni massime dei singoli assi per la decodifica
 {
     int current_pos = blockIdx.x * blockDim.x + threadIdx.x;
     if (current_pos >= nnz) return;
 
-    int orig_idx = d_permutation_indices[current_pos];
-    d_dst_vals[current_pos] = d_src_vals[orig_idx];
+    uint64_t key = d_sorted_keys[current_pos];
 
-    for (int d = 0; d < order; ++d) {
-        d_dst_coords[current_pos * order + d] = d_src_coords[orig_idx * order + d];
+    // Decodifica matematica inversa (Modulo/Divisione) per ripopolare la matrice 2D
+    // Eseguito in parallelo in pochissimi cicli di clock nei registri
+    for (int d = order - 1; d >= 0; --d) {
+        d_dst_coords[current_pos * order + d] = key % d_dim_sizes[d];
+        key /= d_dim_sizes[d];
     }
 }
 
@@ -709,80 +822,162 @@ UniversalCSF build_universal_csf_from_coo(const std::vector<RawCOOElement>& raw_
     csf.order = tensor_order;
     csf.nnz = static_cast<int>(raw_elements.size());
 
-    if (csf.nnz == 0) {
-        csf.d_unified_buffer = nullptr;
-        csf.d_vals = nullptr;
-        csf.d_coordinate_matrix = nullptr;
-        return csf;
-    }
+    if (csf.nnz == 0) return csf;
 
-    // 1. Allocazione del buffer unificato su GPU per accogliere la copia grezza
     size_t vals_bytes = csf.nnz * sizeof(float);
     size_t coords_bytes = csf.nnz * tensor_order * sizeof(int);
+    size_t keys_bytes = csf.nnz * sizeof(uint64_t);
     csf.total_buffer_bytes = vals_bytes + coords_bytes;
 
-    std::vector<char> h_unified_buffer(csf.total_buffer_bytes);
-    float* h_vals_ptr = reinterpret_cast<float*>(h_unified_buffer.data());
-    int* h_coords_ptr = reinterpret_cast<int*>(h_unified_buffer.data() + vals_bytes);
+    // 1. Allineamento dei vettori Host temporanei per la copia grezza bulk
+    std::vector<float> h_vals(csf.nnz);
+    std::vector<uint64_t> h_keys(csf.nnz);
 
-    // Copia lineare speculare Host
+    // Dimensioni degli assi per la linearizzazione bitwise (es: 50, 50, 50, 20, 10)
+    // N.B. In produzione puoi automatizzarlo passando le dimensioni del tensore
+    int h_dim_sizes[MAX_TENSOR_ORDER] = {50, 50, 50, 20, 10, 1, 1};
+
     for (int n = 0; n < csf.nnz; ++n) {
-        h_vals_ptr[n] = raw_elements[n].val;
+        h_vals[n] = raw_elements[n].val;
+
+        // Calcolo della chiave 64-bit lineare (Row-Major flattening)
+        uint64_t linear_key = 0;
         for (int d = 0; d < tensor_order; ++d) {
-            h_coords_ptr[n * tensor_order + d] = raw_elements[n].coords[d];
+            linear_key = linear_key * h_dim_sizes[d] + raw_elements[n].coords[d];
         }
+        h_keys[n] = linear_key;
     }
 
+    // Allocazioni sul Device
+    uint64_t* d_keys;
+    int* d_dim_sizes;
+    CUDA_CHECK(cudaMalloc(&d_keys, keys_bytes));
+    CUDA_CHECK(cudaMalloc(&d_dim_sizes, MAX_TENSOR_ORDER * sizeof(int)));
     CUDA_CHECK(cudaMalloc(&csf.d_unified_buffer, csf.total_buffer_bytes));
-    CUDA_CHECK(cudaMemcpy(csf.d_unified_buffer, h_unified_buffer.data(), csf.total_buffer_bytes, cudaMemcpyHostToDevice));
 
     char* d_byte_base = reinterpret_cast<char*>(csf.d_unified_buffer);
     csf.d_vals = reinterpret_cast<float*>(d_byte_base);
     csf.d_coordinate_matrix = reinterpret_cast<int*>(d_byte_base + vals_bytes);
 
+    // Trasferimento PCIe parallelo immediato
+    CUDA_CHECK(cudaMemcpy(csf.d_vals, h_vals.data(), vals_bytes, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_keys, h_keys.data(), keys_bytes, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_dim_sizes, h_dim_sizes, MAX_TENSOR_ORDER * sizeof(int), cudaMemcpyHostToDevice));
+
     // =========================================================================
-    // ORDINAMENTO PARALLELO TRAMITE FUNCTOR STRUTTURATO
+    // IL CULMINE DELL'OTTIMIZZAZIONE: THRUST RADIX SORT BY KEY (Velocità Hardware Pura)
     // =========================================================================
-    int* d_permutation_indices;
-    CUDA_CHECK(cudaMalloc(&d_permutation_indices, csf.nnz * sizeof(int)));
+    thrust::device_ptr<uint64_t> thr_keys_ptr(d_keys);
+    thrust::device_ptr<float> thr_vals_ptr(csf.d_vals);
 
-    thrust::device_ptr<int> thr_perm_ptr(d_permutation_indices);
-    thrust::sequence(thrust::device, thr_perm_ptr, thr_perm_ptr + csf.nnz);
+    // Questa chiamata NON usa comparatori C++. nvcc attiva istantaneamente il Radix Sort a livello di bit di CUB.
+    // Ordina le chiavi a 64 bit e sposta di riflesso i valori float in un colpo solo.
+    thrust::sort_by_key(thrust::device, thr_keys_ptr, thr_keys_ptr + csf.nnz, thr_vals_ptr);
 
-    // Istanziamo l'operatore esplicito passando l'indirizzo VRAM e il rango
-    RowComparator comp(csf.d_coordinate_matrix, csf.order);
-
-    // L'invocazione ora è sicura al 100% per nvcc poiché il functor non viola i vincoli di contesto
-    thrust::sort(thrust::device, thr_perm_ptr, thr_perm_ptr + csf.nnz, comp);
-
-    // Allocazione temporanea di appoggio per la riorganizzazione in-place su device
-    int* d_sorted_coords;
-    float* d_sorted_vals;
-    CUDA_CHECK(cudaMalloc(&d_sorted_coords, coords_bytes));
-    CUDA_CHECK(cudaMalloc(&d_sorted_vals, vals_bytes));
-
-    // Invocazione del kernel custom di riallineamento parallelo
+    // Spacchettiamo le chiavi ordinate per rigenerare istantaneamente la matrice delle coordinate
     int threads = 256;
     int blocks = (csf.nnz + threads - 1) / threads;
-    apply_permutation_kernel<<<blocks, threads>>>(
-        d_permutation_indices,
+    unpack_coordinates_kernel<<<blocks, threads>>>(
+        d_keys,
         csf.d_coordinate_matrix,
-        csf.d_vals,
-        d_sorted_coords,
-        d_sorted_vals,
+        csf.nnz,
+        csf.order,
+        d_dim_sizes
+    );
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    // Liberazione delle risorse di appoggio
+    cudaFree(d_keys);
+    cudaFree(d_dim_sizes);
+
+    return csf;
+}
+#endif
+
+// Definiamo quanti bit assegnare a ciascun asse (6 bit coprono indici fino a 63)
+#define BITS_PER_DIM 6
+#define DIM_MASK 0x3F // Maschera di bit (63 in decimale) per estrarre le coordinate
+
+/**
+ * Kernel CUDA ultra-rapido per spacchettare le coordinate tramite maschere di bit (Bitwise Unpack).
+ * Matematicamente immune da collisioni o arrotondamenti.
+ */
+__global__ void unpack_coordinates_bitshift_kernel(
+    const uint64_t* __restrict__ d_sorted_keys,
+    int* __restrict__ d_dst_coords,
+    int nnz,
+    int order)
+{
+    int current_pos = blockIdx.x * blockDim.x + threadIdx.x;
+    if (current_pos >= nnz) return;
+
+    uint64_t key = d_sorted_keys[current_pos];
+
+    // Spacchettamento bitwise inverso dall'ultimo al primo asse
+    for (int d = order - 1; d >= 0; --d) {
+        d_dst_coords[current_pos * order + d] = static_cast<int>(key & DIM_MASK);
+        key >>= BITS_PER_DIM;
+    }
+}
+
+UniversalCSF build_universal_csf_from_coo(const std::vector<RawCOOElement>& raw_elements, int tensor_order) {
+    UniversalCSF csf{};
+    csf.order = tensor_order;
+    csf.nnz = static_cast<int>(raw_elements.size());
+
+    if (csf.nnz == 0) return csf;
+
+    size_t vals_bytes = csf.nnz * sizeof(float);
+    size_t coords_bytes = csf.nnz * tensor_order * sizeof(int);
+    size_t keys_bytes = csf.nnz * sizeof(uint64_t);
+    csf.total_buffer_bytes = vals_bytes + coords_bytes;
+
+    std::vector<float> h_vals(csf.nnz);
+    std::vector<uint64_t> h_keys(csf.nnz);
+
+    // Compressione Host tramite Bit-Shifting ad altissima velocità
+    for (int n = 0; n < csf.nnz; ++n) {
+        h_vals[n] = raw_elements[n].val;
+
+        uint64_t linear_key = 0;
+        for (int d = 0; d < tensor_order; ++d) {
+            linear_key = (linear_key << BITS_PER_DIM) | (static_cast<uint64_t>(raw_elements[n].coords[d]) & DIM_MASK);
+        }
+        h_keys[n] = linear_key;
+    }
+
+    // Allocazioni VRAM
+    uint64_t* d_keys;
+    CUDA_CHECK(cudaMalloc(&d_keys, keys_bytes));
+    CUDA_CHECK(cudaMalloc(&csf.d_unified_buffer, csf.total_buffer_bytes));
+
+    char* d_byte_base = reinterpret_cast<char*>(csf.d_unified_buffer);
+    csf.d_vals = reinterpret_cast<float*>(d_byte_base);
+    csf.d_coordinate_matrix = reinterpret_cast<int*>(d_byte_base + vals_bytes);
+
+    // Singolo trasferimento PCIe bulk di chiavi e valori
+    CUDA_CHECK(cudaMemcpy(csf.d_vals, h_vals.data(), vals_bytes, cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMemcpy(d_keys, h_keys.data(), keys_bytes, cudaMemcpyHostToDevice));
+
+    // =========================================================================
+    // RADIX SORT BY KEY NATIVO DI THRUST (Nessun Functor, Performance Massima)
+    // =========================================================================
+    thrust::device_ptr<uint64_t> thr_keys_ptr(d_keys);
+    thrust::device_ptr<float> thr_vals_ptr(csf.d_vals);
+
+    thrust::sort_by_key(thrust::device, thr_keys_ptr, thr_keys_ptr + csf.nnz, thr_vals_ptr);
+
+    // Spacchettamento parallelo coalescente via maschere bitwise
+    int threads = 256;
+    int blocks = (csf.nnz + threads - 1) / threads;
+    unpack_coordinates_bitshift_kernel<<<blocks, threads>>>(
+        d_keys,
+        csf.d_coordinate_matrix,
         csf.nnz,
         csf.order
     );
     CUDA_CHECK(cudaDeviceSynchronize());
 
-    // Copia Device-to-Device ad altissima banda
-    CUDA_CHECK(cudaMemcpy(csf.d_vals, d_sorted_vals, vals_bytes, cudaMemcpyDeviceToDevice));
-    CUDA_CHECK(cudaMemcpy(csf.d_coordinate_matrix, d_sorted_coords, coords_bytes, cudaMemcpyDeviceToDevice));
-
-    // Rilascio risorse
-    cudaFree(d_permutation_indices);
-    cudaFree(d_sorted_coords);
-    cudaFree(d_sorted_vals);
-
+    cudaFree(d_keys);
     return csf;
 }

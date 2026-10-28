@@ -154,7 +154,7 @@ set_target_properties(cuda_select_demo PROPERTIES
 target_link_libraries(cuda_select_demo
         Matplot++::matplot)
 
-add_executable(some some.cpp csf_einsum.cu)
+add_executable(some einsum_benchmark.cpp csf_einsum.cu)
 set_target_properties(some PROPERTIES
         CUDA_SEPARABLE_COMPILATION OFF
         CXX_STANDARD 17

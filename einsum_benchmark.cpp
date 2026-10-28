@@ -337,32 +337,33 @@ struct RowLexicographicalComparator {
 // }
 UniversalCSF build_universal_csf_from_coo(const std::vector<RawCOOElement>& raw_elements, int tensor_order);
 
-// UniversalCSF build_universal_csf_from_coo(const std::vector<RawCOOElement>& raw_elements, int tensor_order) {
-//     UniversalCSF csf{};
-//     csf.order = tensor_order; csf.nnz = static_cast<int>(raw_elements.size());
-//     std::vector<RawCOOElement> sorted_elements = raw_elements;
-//     std::sort(sorted_elements.begin(), sorted_elements.end(), [tensor_order](const RawCOOElement& a, const RawCOOElement& b) {
-//         for (int d = 0; d < tensor_order; ++d) { if (a.coords[d] != b.coords[d]) return a.coords[d] < b.coords[d]; }
-//         return false;
-//     });
-//     size_t vals_bytes = csf.nnz * sizeof(float);
-//     size_t coords_bytes = csf.nnz * tensor_order * sizeof(int);
-//     csf.total_buffer_bytes = vals_bytes + coords_bytes;
-//     std::vector<char> h_unified_buffer(csf.total_buffer_bytes);
-//     float* h_vals_ptr = reinterpret_cast<float*>(h_unified_buffer.data());
-//     int* h_coords_ptr = reinterpret_cast<int*>(h_unified_buffer.data() + vals_bytes);
-//     for (int n = 0; n < csf.nnz; ++n) {
-//         h_vals_ptr[n] = sorted_elements[n].val;
-//         for (int d = 0; d < tensor_order; ++d) h_coords_ptr[n * tensor_order + d] = sorted_elements[n].coords[d];
-//     }
-//     CUDA_CHECK(cudaMalloc(&csf.d_unified_buffer, csf.total_buffer_bytes));
-//     CUDA_CHECK(cudaMemcpy(csf.d_unified_buffer, h_unified_buffer.data(), csf.total_buffer_bytes, cudaMemcpyHostToDevice));
-//     char* d_byte_base = reinterpret_cast<char*>(csf.d_unified_buffer);
-//     csf.d_vals = reinterpret_cast<float*>(d_byte_base);
-//     csf.d_coordinate_matrix = reinterpret_cast<int*>(d_byte_base + vals_bytes);
-//     return csf;
-// }
-
+#ifdef CPU_WORK
+UniversalCSF build_universal_csf_from_coo(const std::vector<RawCOOElement>& raw_elements, int tensor_order) {
+    UniversalCSF csf{};
+    csf.order = tensor_order; csf.nnz = static_cast<int>(raw_elements.size());
+    std::vector<RawCOOElement> sorted_elements = raw_elements;
+    std::sort(sorted_elements.begin(), sorted_elements.end(), [tensor_order](const RawCOOElement& a, const RawCOOElement& b) {
+        for (int d = 0; d < tensor_order; ++d) { if (a.coords[d] != b.coords[d]) return a.coords[d] < b.coords[d]; }
+        return false;
+    });
+    size_t vals_bytes = csf.nnz * sizeof(float);
+    size_t coords_bytes = csf.nnz * tensor_order * sizeof(int);
+    csf.total_buffer_bytes = vals_bytes + coords_bytes;
+    std::vector<char> h_unified_buffer(csf.total_buffer_bytes);
+    float* h_vals_ptr = reinterpret_cast<float*>(h_unified_buffer.data());
+    int* h_coords_ptr = reinterpret_cast<int*>(h_unified_buffer.data() + vals_bytes);
+    for (int n = 0; n < csf.nnz; ++n) {
+        h_vals_ptr[n] = sorted_elements[n].val;
+        for (int d = 0; d < tensor_order; ++d) h_coords_ptr[n * tensor_order + d] = sorted_elements[n].coords[d];
+    }
+    CUDA_CHECK(cudaMalloc(&csf.d_unified_buffer, csf.total_buffer_bytes));
+    CUDA_CHECK(cudaMemcpy(csf.d_unified_buffer, h_unified_buffer.data(), csf.total_buffer_bytes, cudaMemcpyHostToDevice));
+    char* d_byte_base = reinterpret_cast<char*>(csf.d_unified_buffer);
+    csf.d_vals = reinterpret_cast<float*>(d_byte_base);
+    csf.d_coordinate_matrix = reinterpret_cast<int*>(d_byte_base + vals_bytes);
+    return csf;
+}
+#endif
 UnifiedCOOOutput create_unified_coo_output(int max_nnz, int out_order) {
     UnifiedCOOOutput out{}; out.max_nnz = max_nnz; out.out_order = out_order;
     size_t indices_bytes = max_nnz * out_order * sizeof(int);
