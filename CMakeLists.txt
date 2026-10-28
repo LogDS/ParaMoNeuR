@@ -16,6 +16,11 @@ set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 set(CMAKE_CUDA_EXTENSIONS OFF) # IMPORTANTE: Risolve l'errore "requires the language dialect CUDA23"
 
+
+if(CMAKE_CXX_FLAGS_RELEASE)
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3")
+endif()
+
 # Rileva automaticamente l'architettura della GPU (es. sm_75, sm_80, ecc.)
 set(CMAKE_CUDA_ARCHITECTURES native)
 
