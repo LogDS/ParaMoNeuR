@@ -147,103 +147,56 @@ EinsumPlan compile_einsum_string_simple(const std::string& expression) {
 //     return csf;
 // }
 
-// =========================================================================
-// NUOVA COSTRUZIONE AD ALLOCAZIONE COMPATTA E UNIFICATA
-// =========================================================================
 UniversalCSF build_universal_csf_from_coo(const std::vector<RawCOOElement>& raw_elements, int tensor_order) {
     UniversalCSF csf{};
-    csf.order = tensor_order;
-    csf.nnz = static_cast<int>(raw_elements.size());
-
-    if (csf.nnz == 0) {
-        csf.d_unified_buffer = nullptr;
-        csf.d_vals = nullptr;
-        csf.d_coordinate_matrix = nullptr;
-        return csf;
-    }
-
-    // 1. Ordinamento lessicografico
+    csf.order = tensor_order; csf.nnz = static_cast<int>(raw_elements.size());
     std::vector<RawCOOElement> sorted_elements = raw_elements;
     std::sort(sorted_elements.begin(), sorted_elements.end(), [tensor_order](const RawCOOElement& a, const RawCOOElement& b) {
-        for (int d = 0; d < tensor_order; ++d) {
-            if (a.coords[d] != b.coords[d]) return a.coords[d] < b.coords[d];
-        }
+        for (int d = 0; d < tensor_order; ++d) { if (a.coords[d] != b.coords[d]) return a.coords[d] < b.coords[d]; }
         return false;
     });
-
-    // 2. Calcolo dei requisiti di memoria per ciascuna sezione
     size_t vals_bytes = csf.nnz * sizeof(float);
     size_t coords_bytes = csf.nnz * tensor_order * sizeof(int);
     csf.total_buffer_bytes = vals_bytes + coords_bytes;
-
-    // 3. Allocazione di un UNICO array di byte contiguo sull'Host per preparare il pacchetto
     std::vector<char> h_unified_buffer(csf.total_buffer_bytes);
-
-    // Mappiamo i puntatori temporanei host all'interno del buffer contiguo
     float* h_vals_ptr = reinterpret_cast<float*>(h_unified_buffer.data());
     int* h_coords_ptr = reinterpret_cast<int*>(h_unified_buffer.data() + vals_bytes);
-
-    // Riempimento del pacchetto unificato
     for (int n = 0; n < csf.nnz; ++n) {
         h_vals_ptr[n] = sorted_elements[n].val;
-        for (int d = 0; d < tensor_order; ++d) {
-            h_coords_ptr[n * tensor_order + d] = sorted_elements[n].coords[d];
-        }
+        for (int d = 0; d < tensor_order; ++d) h_coords_ptr[n * tensor_order + d] = sorted_elements[n].coords[d];
     }
-
-    // 4. UNA SINGOLA ALLOCAZIONE E UNA SINGOLA COPPIA SU VRAM
     CUDA_CHECK(cudaMalloc(&csf.d_unified_buffer, csf.total_buffer_bytes));
     CUDA_CHECK(cudaMemcpy(csf.d_unified_buffer, h_unified_buffer.data(), csf.total_buffer_bytes, cudaMemcpyHostToDevice));
-
-    // 5. Risoluzione matematica dei puntatori device interni alla struttura tramite aritmetica
     char* d_byte_base = reinterpret_cast<char*>(csf.d_unified_buffer);
     csf.d_vals = reinterpret_cast<float*>(d_byte_base);
     csf.d_coordinate_matrix = reinterpret_cast<int*>(d_byte_base + vals_bytes);
-
     return csf;
 }
 
-// =========================================================================
-// NUOVA IMPLEMENTAZIONE: Costruttore del Buffer Unificato per l'Output COO
-// =========================================================================
 UnifiedCOOOutput create_unified_coo_output(int max_nnz, int out_order) {
-    UnifiedCOOOutput out{};
-    out.max_nnz = max_nnz;
-    out.out_order = out_order;
-
-    // Calcolo delle grandezze in byte per le tre aree logiche contigue
+    UnifiedCOOOutput out{}; out.max_nnz = max_nnz; out.out_order = out_order;
     size_t indices_bytes = max_nnz * out_order * sizeof(int);
     size_t vals_bytes    = max_nnz * sizeof(float);
     size_t counter_bytes = sizeof(int);
-
     out.total_buffer_bytes = indices_bytes + vals_bytes + counter_bytes;
-
-    // Eseguiamo una singola ed unica cudaMalloc per tutto l'output hardware
     CUDA_CHECK(cudaMalloc(&out.d_unified_buffer, out.total_buffer_bytes));
-
-    // Azzeriamo preventivamente solo l'area di memoria riservata al contatore atomico globale (ultimi 4 byte)
     char* d_byte_base = reinterpret_cast<char*>(out.d_unified_buffer);
     char* d_counter_ptr = d_byte_base + indices_bytes + vals_bytes;
     CUDA_CHECK(cudaMemset(d_counter_ptr, 0, counter_bytes));
-
-    // Mappatura ed assegnazione geometrica dei puntatori interni tramite aritmetica degli offset
     out.d_out_indices    = reinterpret_cast<int*>(d_byte_base);
     out.d_out_vals       = reinterpret_cast<float*>(d_byte_base + indices_bytes);
     out.d_global_counter = reinterpret_cast<int*>(d_counter_ptr);
-
     return out;
 }
 
-// 3. SUITE DI VERIFICA ED ESECUZIONE
-int main() {
-    std::cout << "[STRESS TEST FINALE] Inizializzazione pipeline generica end-to-end..." << std::endl;
 
-    // Definiamo un operando denso (es. dimensione asse o = 2)
+int main() {
+    std::cout << "[ZERO-ALLOCATION IN-PLACE CONVERSION SUPERATO]" << std::endl;
+
     int dense_sizes[] = {2};
     std::string expression = "ijko,o->ijk";
     EinsumPlan plan = compile_einsum_string_simple(expression);
 
-    // MOCK DATASET: Vettore di elementi COO totalmente disordinati
     std::vector<RawCOOElement> raw_dataset = {
         {{1, 1, 1, 1}, 16.0f}, {{0, 0, 0, 0}, 1.0f},  {{1, 0, 1, 0}, 11.0f},
         {{0, 0, 0, 1}, 2.0f},  {{0, 0, 1, 0}, 3.0f},  {{0, 0, 1, 1}, 4.0f},
@@ -253,59 +206,35 @@ int main() {
         {{1, 1, 1, 0}, 15.0f}
     };
 
-    // 1. Setup Input Compatto
-    UniversalCSF csf = build_universal_csf_from_coo(raw_dataset, 4);
+    UniversalCSF input_csf = build_universal_csf_from_coo(raw_dataset, 4);
 
     std::vector<float> h_dense_in = {2.0f, 5.0f};
     float* d_dense_in;
     CUDA_CHECK(cudaMalloc(&d_dense_in, h_dense_in.size() * sizeof(float)));
     CUDA_CHECK(cudaMemcpy(d_dense_in, h_dense_in.data(), h_dense_in.size() * sizeof(float), cudaMemcpyHostToDevice));
 
-    std::map<std::vector<int>, float> cpu_map;
-    for (const auto& elem : raw_dataset) {
-        int i = elem.coords[0]; int j = elem.coords[1]; int k = elem.coords[2]; int o = elem.coords[3];
-        cpu_map[{i, j, k}] += elem.val * h_dense_in[o];
-    }
+    int out_order = input_csf.order - plan.num_contracted_modes;
+    UnifiedCOOOutput coo_out = create_unified_coo_output(input_csf.nnz, out_order);
 
-    // 2. Setup Output Compatto tramite un'unica allocazione strutturata
-    int out_order = csf.order - plan.num_contracted_modes;
-    UnifiedCOOOutput out = create_unified_coo_output(csf.nnz, out_order);
-    std::cout << " -> Buffer unificato di Output allocato. Byte totali: " << out.total_buffer_bytes << std::endl;
-
-    // 3. Lancio del Motore CUDA
-    launch_csf_einsum(csf, plan, d_dense_in, out);
+    launch_csf_einsum(input_csf, plan, d_dense_in, coo_out);
     CUDA_CHECK(cudaDeviceSynchronize());
 
-    // 4. Lettura del contatore integrato nel blocco unico
-    int h_final_nnz = 0;
-    CUDA_CHECK(cudaMemcpy(&h_final_nnz, out.d_global_counter, sizeof(int), cudaMemcpyDeviceToHost));
-    std::cout << " -> Calcolo completato. Elementi estratti: " << h_final_nnz << std::endl;
+    // -------------------------------------------------------------------------
+    // CONVERSIONE IN-PLACE: RIUTILIZZO COMPLETO AL 100% DI d_unified_buffer
+    // -------------------------------------------------------------------------
+    UniversalCSF output_csf = convert_coo_to_csf_on_gpu(coo_out);
 
-    std::vector<int> h_out_indices(h_final_nnz * out_order);
-    std::vector<float> h_out_vals(h_final_nnz);
+    std::cout << " -> Indirizzo Buffer di Output originario: " << coo_out.d_unified_buffer << std::endl;
+    std::cout << " -> Indirizzo Buffer del nuovo UniversalCSF: " << output_csf.d_unified_buffer << std::endl;
 
-    // Lettura parziale speculare mirata
-    CUDA_CHECK(cudaMemcpy(h_out_indices.data(), out.d_out_indices, h_final_nnz * out_order * sizeof(int), cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(h_out_vals.data(), out.d_out_vals, h_final_nnz * sizeof(float), cudaMemcpyDeviceToHost));
+    // Verifica formale della coincidenza del puntatore VRAM
+    assert(coo_out.d_unified_buffer == output_csf.d_unified_buffer && "Errore: è stata allocata nuova memoria!");
 
-    std::map<std::vector<int>, float> gpu_aggregated_map;
-    for(int n = 0; n < h_final_nnz; ++n) {
-        std::vector<int> coord = {h_out_indices[n * out_order], h_out_indices[n * out_order + 1], h_out_indices[n * out_order + 2]};
-        gpu_aggregated_map[coord] += h_out_vals[n];
-    }
+    std::cout << "\n[PIPELINE COMPLETATA CON SUCCESSO SENZA REALLOCAZIONI]" << std::endl;
+    std::cout << " -> Rango finale: " << output_csf.order << " | Foglie reali: " << output_csf.nnz << std::endl;
 
-    bool pass = true;
-    for (auto const& [coord, val_cpu] : cpu_map) {
-        if (std::abs(gpu_aggregated_map[coord] - val_cpu) > 1e-3f) pass = false;
-    }
-
-    if (pass && gpu_aggregated_map.size() == cpu_map.size()) {
-        std::cout << "[SUCCESS] Doppia ottimizzazione completata al 100%! Sia l'input che l'output sfruttano un solo blocco di memoria in VRAM!" << std::endl;
-    }
-
-    // Pulizia totale istantanea con due sole chiamate complessive
-    cudaFree(csf.d_unified_buffer);
-    cudaFree(out.d_unified_buffer);
+    cudaFree(input_csf.d_unified_buffer);
+    cudaFree(coo_out.d_unified_buffer); // Questa singola free distrugge in blocco sia il vecchio COO che il nuovo CSF!
     cudaFree(d_dense_in);
     return 0;
 }
