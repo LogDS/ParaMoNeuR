@@ -6,6 +6,9 @@
 #include <vector>
 #include <cuda_runtime.h>
 #include "logds/paramoneur/engine/prln_step.cuh"
+#include "logds/paramoneur/engine/mdd/mdd_coo.h"
+#include "logds/paramoneur/engine/sparse_tensor/dynamic_hybrid_tensor.h"
+#include "logds/paramoneur/types/SparseTensor.h"
 
 #define CUDA_CHECK(call) \
     if((call) != cudaSuccess) { \
@@ -208,6 +211,92 @@ int main() {
     cudaFree(d_M_rowPtr); cudaFree(d_M_colInd); cudaFree(d_M_val); cudaFree(d_X); cudaFree(d_Y); cudaFree(d_H); cudaFree(d_K);
     cudaFree(d_W); cudaFree(d_N); cudaFree(d_V); cudaFree(d_Z); cudaFree(d_X_prime); cudaFree(d_Y_prime); cudaFree(d_C); cudaFree(d_I); cudaFree(d_incdec);
     cudaFree(d_R_rowPtr); cudaFree(d_R_colInd); cudaFree(d_R_val); cudaFree(d_Y_iter); cudaFree(d_G);
+
+
+    // Configurazione MDD: 4 variabili, dominio ternario {0, 1, 2}
+    int num_vars = 4;
+    int domain_size = 3;
+
+    CUDAMddCOO mdd(num_vars, domain_size);
+
+    std::vector<int> target = {1, 2, 0, 1};
+
+    // 2) Verifica iniziale di presenza nel grafo denso
+    std::cout << "Iniziale ammissibilita': " << mdd.isAdmissible(target) << " (Atteso: 1)\n";
+
+    // Ispezione coordinate tramite l'accessore COO simulato
+    COOTuple coo_info = mdd.getCOOAccessor(target);
+    std::cout << "[COO Accessor] -> Row (Parent): " << coo_info.row
+              << " | Col (Terminal): " << coo_info.col
+              << " | Value: " << coo_info.value
+              << " | Active: " << coo_info.active << "\n";
+
+    // 3) Rimozione dell'assegnamento
+    std::cout << "\nRimuovo l'assegnamento target...\n";
+    mdd.removeAssignment(target);
+
+    // 4) Verifica post-rimozione
+    std::cout << "Post-rimozione ammissibilita': " << mdd.isAdmissible(target) << " (Atteso: 0)\n";
+
+    // Controllo di un cammino adiacente (non deve essere stato modificato)
+    std::vector<int> sibling = {1, 2, 0, 2};
+    std::cout << "Fratello affine ammissibilita': " << mdd.isAdmissible(sibling) << " (Atteso: 1)\n";
+
+
+    // Definiamo due assegnamenti in cui X_1 (la seconda variabile) è uguale a 2
+    std::vector<int> path_A = {0, 2, 1, 1}; // X_1 = 2
+    std::vector<int> path_B = {1, 2, 0, 0}; // X_1 = 2
+    std::vector<int> path_C = {1, 0, 0, 0}; // X_1 = 0 (Non deve essere rimosso!)
+
+    std::cout << "--- Verifiche Iniziali ---\n";
+    std::cout << "Path A ammissibile: " << mdd.isAdmissible(path_A) << " (Atteso: 1)\n";
+    std::cout << "Path B ammissibile: " << mdd.isAdmissible(path_B) << " (Atteso: 1)\n";
+    std::cout << "Path C ammissibile: " << mdd.isAdmissible(path_C) << " (Atteso: 1)\n";
+
+    // Eseguiamo la rimozione di TUTTI i cammini dove X_1 == 2
+    std::cout << "\nRimo tutti gli assegnamenti dove la variabile X_1 e' pari a 2...\n";
+    mdd.removeVariableConstant(1, 2); // target_var = 1, constant_val = 2
+
+    std::cout << "\n--- Verifiche Post Rimozione Massiva ---\n";
+    std::cout << "Path A ammissibile: " << mdd.isAdmissible(path_A) << " (Atteso: 0)\n";
+    std::cout << "Path B ammissibile: " << mdd.isAdmissible(path_B) << " (Atteso: 0)\n";
+    std::cout << "Path C ammissibile: " << mdd.isAdmissible(path_C) << " (Atteso: 1)\n";
+
+
+    std::cout << "=== ENGINE COUPLING TEST: STRUTTURA IBRIDA CSF + DELTA ===\n";
+    logds::types::SparseTensor cpu_tensor{{10,10}, 0.0};
+    cpu_tensor.set_value({0, 1}, 1.5);
+    cpu_tensor.set_value({1, 1}, 2.5);
+    cpu_tensor.set_value({2, 2}, 3.5);
+    cpu_tensor.set_value({3, 2}, 4.5);
+
+    std::vector<uint64_t> shape = {10, 10};
+    size_t cap_budget = 500;
+
+    // 2. Allocazione e compilazione in-place dell'albero sulla GPU
+    DynamicHybridTensor T_A(shape, cap_budget);
+    DynamicHybridTensor T_B(shape, cap_budget);
+
+    T_A.initialize_from_cpu(cpu_tensor);
+    T_B.initialize_from_cpu(cpu_tensor);
+    std::cout << " -> Albero CSF compilato con successo su GPU. NNZ stabili: " << T_A.csf_nnz << "\n";
+
+    std::cout << "\n=== STEP ADAM (MUTAZIONE CASUALE IN-PLACE IN O(1)) ===\n";
+    T_A.set_value_atomic({4, 4}, 99.9f); // Inserimento lock-free nel Delta Buffer d'appoggio
+
+    std::cout << "\n=== STEP GENERALIZZATO N-WAY EINSUM GUIDATO DA ID ===\n";
+    // Configurazione della ricetta tramite ID assi interi costanti (Esempio: A(i,j) * B(j,k) -> Out(i,k))
+    EinsumRecipe recipe;
+    recipe.input_axes = {
+            {0, 1}, // Pesi/Gradienti di A (Assi 0 e 1)
+            {1, 2}  // Pesi/Gradienti di B (Assi 1 e 2)
+    };
+    recipe.output_axes = {0, 2}; // Output finale (Assi 0 e 2)
+
+    std::vector<DynamicHybridTensor*> pipeline = {&T_A, &T_B};
+    DynamicHybridTensor Out = DynamicHybridTensor::n_way_einstein_sum(pipeline, recipe, shape, cap_budget);
+
+
 
     return 0;
 }

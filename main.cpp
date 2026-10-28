@@ -1,5 +1,6 @@
 #include <iostream>
 
+#include "logds/paramoneur/engine/mdd/mdd_coo.h"
 #include "logds/paramoneur/propertygraph/pg.h"
 #include "logds/paramoneur/propertygraph/pg_store.h"
 
@@ -287,5 +288,35 @@ int main() {
     // ESECUZIONE PARTE 3): Plotting tabellare a terminale tramite tabulate filtrando con soglia t = 5.0
     std::cout << "\n--- RENDERING TABELLA CON TABULATE (Filtro t > 5.0) ---";
     tensor.terminal_plot_mytensor(5.0, my_labels);
+
+
+    // Configurazione MDD: 4 variabili, dominio ternario {0, 1, 2}
+    int num_vars = 4;
+    int domain_size = 3;
+
+    CUDAMddCOO mdd(num_vars, domain_size);
+
+    std::vector<int> target = {1, 2, 0, 1};
+
+    // 2) Verifica iniziale di presenza nel grafo denso
+    std::cout << "Iniziale ammissibilita': " << mdd.isAdmissible(target) << " (Atteso: 1)\n";
+
+    // Ispezione coordinate tramite l'accessore COO simulato
+    COOTuple coo_info = mdd.getCOOAccessor(target);
+    std::cout << "[COO Accessor] -> Row (Parent): " << coo_info.row
+              << " | Col (Terminal): " << coo_info.col
+              << " | Value: " << coo_info.value
+              << " | Active: " << coo_info.active << "\n";
+
+    // 3) Rimozione dell'assegnamento
+    std::cout << "\nRimo l'assegnamento target...\n";
+    mdd.removeAssignment(target);
+
+    // 4) Verifica post-rimozione
+    std::cout << "Post-rimozione ammissibilita': " << mdd.isAdmissible(target) << " (Atteso: 0)\n";
+
+    // Controllo di un cammino adiacente (non deve essere stato modificato)
+    std::vector<int> sibling = {1, 2, 0, 2};
+    std::cout << "Fratello affine ammissibilita': " << mdd.isAdmissible(sibling) << " (Atteso: 1)\n";
 
 }

@@ -1,3 +1,4 @@
 *.deb
 /dist/
 /cmake-build-debug-system/
+/cmake-build-release-system/

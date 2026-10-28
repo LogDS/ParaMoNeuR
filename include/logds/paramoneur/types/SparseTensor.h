@@ -9,6 +9,7 @@
 #include <variant>
 #include <vector>
 #include <cmath>
+#include <filesystem>
 #include <functional>
 #include <string>
 
@@ -35,10 +36,9 @@ public:
     // 2. COSTRUTTORE PARAMETRIZZATO CON INIZIALIZZAZIONE DI DEFAULT A ZERO
 
     SparseTensor(const std::vector<size_t>& tensor_shape, double default_value = 0.0);
-
     SparseTensor(const std::vector<size_t>& tensor_shape, int64_t default_value = 0);
-
     SparseTensor(TensorDataType type, const std::vector<size_t>& tensor_shape);
+    SparseTensor(const std::filesystem::path& path, double default_value = 0.0);
 
     // INTERFACCIA PUBBLICA DI SOLA LETTURA (GETTERS)
     [[nodiscard]] TensorDataType get_data_type() const { return data_type; }

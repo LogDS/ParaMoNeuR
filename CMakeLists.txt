@@ -128,9 +128,15 @@ target_link_libraries(Paramoneur2 CUDA::cutensor
     )
 
 add_executable(cuda_select_demo
-        example_prln.cpp
+#        example_prln.cpp
+        benchmark.cpp
         sources/logds/paramoneur/engine/prln_step.cu
         include/logds/paramoneur/engine/prln_step.cuh
+        sources/logds/paramoneur/engine/mdd/mdd_coo.cu
+        sources/logds/paramoneur/engine/mdd/mdd_coo_kernel.cu
+        sources/logds/paramoneur/engine/sparse_tensor/dynamic_hybrid_tensor.cu
+        sources/logds/paramoneur/engine/sparse_tensor/dynamic_hybrid_tensor_kenrels.cu
+        sources/logds/paramoneur/types/SparseTensor.cpp
 )
 set_target_properties(cuda_select_demo PROPERTIES
         CUDA_SEPARABLE_COMPILATION OFF
@@ -140,3 +146,5 @@ set_target_properties(cuda_select_demo PROPERTIES
         CUDA_STANDARD_REQUIRED ON
         CUDA_SEPARABLE_COMPILATION OFF
 )
+target_link_libraries(cuda_select_demo
+        Matplot++::matplot)

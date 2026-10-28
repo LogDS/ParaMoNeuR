@@ -11,6 +11,8 @@
 #include <iomanip>
 #include <stdexcept>
 
+#include "yaucl/strings/string_utils.h"
+
 namespace logds::types {
     SparseTensor::SparseTensor(): data_type(TensorDataType::DOUBLE), rank(0), default_value(0.0) {}
 
@@ -27,6 +29,28 @@ namespace logds::types {
             default_value = int64_t(0);
         } else {
             default_value = double(0.0);
+        }
+    }
+
+    SparseTensor::SparseTensor(const std::filesystem::path &path, double default_value) : data_type(TensorDataType::DOUBLE), default_value{default_value} {
+        if (!std::filesystem::is_regular_file(path))
+            return;
+        std::ifstream in(path.string());
+        std::string line;
+        shape.resize(0, 0);
+        while (std::getline(in, line)) {
+            auto v = yaucl::strings::split(line, ",");
+            for (auto& ref : v)
+                yaucl::strings::trim(ref);
+            double value = std::stod(*v.rbegin());
+            std::vector<size_t> indices(v.size()-1, 0);
+            rank = indices.size();
+            shape.resize(rank, 0);
+            for (size_t i = 0; i < indices.size(); ++i) {
+                indices[i] = std::stoull(v[i]);
+                shape[i] = std::max(shape[i], indices[i]+1);
+            }
+            set_value(indices, value);
         }
     }
 
