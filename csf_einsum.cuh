@@ -33,16 +33,32 @@ struct UniversalCSF {
 
     // Puntatori derivati tramite aritmetica degli offset (puntano all'interno di d_unified_buffer)
     float* d_vals;
-    int* d_coordinate_matrix; 
+    int* d_coordinate_matrix;
 };
 
+
+
+// NUOVA STRUTTURA: Buffer Unificato per il Risultato COO (Output)
+struct UnifiedCOOOutput {
+    int out_order;
+    int max_nnz;
+    void* d_unified_buffer;
+    size_t total_buffer_bytes;
+
+    // Puntatori derivati tramite aritmetica degli offset (dentro d_unified_buffer)
+    int* d_out_indices;     // Array bidimensionale di indici [max_nnz * out_order]
+    float* d_out_vals;      // Array di valori float [max_nnz]
+    int* d_global_counter;  // Contatore atomico hardware per gli elementi validi finali
+};
+
+
+
+// Interfaccia di lancio modificata per accettare la nuova struttura di output
 void launch_csf_einsum(
     const UniversalCSF& csf,
     const EinsumPlan& plan,
     const float* d_dense_input,
-    int* d_out_indices,
-    float* d_out_vals,
-    int* d_global_counter
+    UnifiedCOOOutput& out
 );
 
 
