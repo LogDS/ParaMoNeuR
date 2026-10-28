@@ -25,9 +25,6 @@ struct UniversalCSF {
     int* d_coordinate_matrix;
 };
 
-// Primitive Host C++
-EinsumPlan compile_einsum_string(const std::string& expression, const int* dense_sizes);
-
 void launch_csf_einsum(
     const UniversalCSF& csf,
     const EinsumPlan& plan,
@@ -36,5 +33,13 @@ void launch_csf_einsum(
     float* d_out_vals,
     int* d_global_counter
 );
+
+
+// Struttura per il caricamento dei dati COO sparsi e disordinati dall'Host
+struct RawCOOElement {
+    int coords[MAX_TENSOR_ORDER];
+    float val;
+};
+
 
 #endif // CSF_EINSUM_CUH
