@@ -830,13 +830,161 @@
 /**
  * Kernel CUDA per l'attraversamento iterativo dell'albero CSF con array statici.
  */
+// #include "csf_einsum.cuh"
+
+/**
+ * Kernel CUDA parallelo basato sui nodi foglia finali.
+ * Ogni thread gestisce direttamente un segmento terminale (fibra di contrazione),
+ * eliminando la divergenza del backtracking e garantendo che il 100% dei nodi sia processato.
+ */
+__global__ void einsum_universal_leaf_kernel(
+    const int* __restrict__ all_ptrs,
+    const int* __restrict__ all_indices,
+    const float* __restrict__ csf_vals,
+    const float* __restrict__ dense_input,
+    const int* __restrict__ coordinate_map, // Matrice ordinata [nnz * csf.order]
+    EinsumPlan plan,
+    UniversalCSF csf,
+    int total_leaves, // Parallelizzazione 1:1 con il numero di foglie reali (nnz)
+    int* __restrict__ coo_out_indices,
+    float* __restrict__ coo_out_vals,
+    int* __restrict__ global_output_counter)
+{
+    // Ogni thread gestisce esattamente UNA foglia dell'albero CSF
+    int leaf_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (leaf_idx >= total_leaves) return;
+
+    int current_indices[MAX_TENSOR_ORDER];
+
+    // 1. Recupero perfetto delle coordinate N-Dimensionali di questa specifica foglia
+    for (int d = 0; d < csf.order; ++d) {
+        current_indices[d] = coordinate_map[leaf_idx * csf.order + d];
+    }
+
+    // 2. Calcolo DINAMICO dell'indice sull'operando denso basato sul Piano reale
+    int current_dense_idx = 0;
+    for (int c = 0; c < plan.num_contracted_modes; ++c) {
+        int target_lvl = plan.contracted_levels[c];
+        // Recupera il valore della coordinata al livello contratto e applica lo stride del piano
+        current_dense_idx += current_indices[target_lvl] * plan.dense_dim_strides[c];
+    }
+
+    // 3. Esecuzione del prodotto dell'elemento sparse per l'elemento denso corrispondente
+    float val = csf_vals[leaf_idx] * dense_input[current_dense_idx];
+
+    if (val != 0.0f) {
+        // Scrittura atomica nel buffer COO intermedio
+        int out_slot = atomicAdd(global_output_counter, 1);
+        coo_out_vals[out_slot] = val;
+
+        // Scrittura selettiva delle sole coordinate non contratte nel formato COO finale
+        int out_order = csf.order - plan.num_contracted_modes;
+        int out_d = 0;
+        for (int d = 0; d < csf.order; ++d) {
+            bool is_contracted = false;
+            for (int c = 0; c < plan.num_contracted_modes; ++c) {
+                if (plan.contracted_levels[c] == d) {
+                    is_contracted = true;
+                    break;
+                }
+            }
+            if (!is_contracted) {
+                coo_out_indices[out_slot * out_order + out_d] = current_indices[d];
+                out_d++;
+            }
+        }
+    }
+}
+
+// __global__ void einsum_leaf_centric_csf_kernel(
+//     const int* __restrict__ all_ptrs,
+//     const int* __restrict__ all_indices,
+//     const float* __restrict__ csf_vals,
+//     const float* __restrict__ dense_input,
+//     EinsumPlan plan,
+//     UniversalCSF csf,
+//     int num_final_fibers, // Numero di nodi al penultimo livello (k)
+//     int* __restrict__ coo_out_indices,
+//     float* __restrict__ coo_out_vals,
+//     int* __restrict__ global_output_counter)
+// {
+//     // Ogni thread mappa 1:1 su una fibra finale (es. una terna i, j, k specifica)
+//     int fiber_idx = blockIdx.x * blockDim.x + threadIdx.x;
+//     if (fiber_idx >= num_final_fibers) return;
+//
+//     // Ricostruzione delle coordinate risalendo l'albero tramite i puntatori invertiti o
+//     // decodificando in modo deterministico dal piano di offset
+//     int current_indices[MAX_TENSOR_ORDER];
+//
+//     // Per via del design linearizzato e contiguo dello stress test, possiamo risalire
+//     // alle coordinate esatte leggendo gli indici associati alla posizione della fibra
+//     // [Nota di ottimizzazione: in una pipeline reale questo array viene passato pre-calcolato o letto via parent-pointer]
+//
+//     // Troviamo l'intervallo delle foglie associato a questa fibra finale (livello csf.order - 1)
+//     int start_idx = all_ptrs[csf.ptr_offsets[csf.order - 1] + fiber_idx];
+//     int end_idx = all_ptrs[csf.ptr_offsets[csf.order - 1] + fiber_idx + 1];
+//
+//     if (start_idx >= end_idx) return;
+//
+//     float fiber_accumulator = 0.0f;
+//
+//     // Eseguiamo la contrazione lungo la fibra
+//     for (int e = start_idx; e < end_idx; ++e) {
+//         int leaf_idx = all_indices[csf.ind_offsets[csf.order - 1] + e];
+//         current_indices[csf.order - 1] = leaf_idx;
+//
+//         // Recuperiamo le coordinate degli antenati per calcolare l'indice denso
+//         // Nello stress test procedurale, mappiamo linearmente l'appartenenza strutturale
+//         int parent_k = fiber_idx;
+//         current_indices[2] = all_indices[csf.ind_offsets[2] + parent_k];
+//
+//         // Mappatura fittizia coerente con la topologia del test per ricostruire i e j
+//         // In produzione si usa un array di parent mapping a bassissimo costo di memoria
+//         current_indices[1] = all_indices[csf.ind_offsets[1] + (parent_k / 2)];
+//         current_indices[0] = all_indices[csf.ind_offsets[0] + (parent_k / 6)];
+//
+//         int current_dense_idx = 0;
+//         for (int c = 0; c < plan.num_contracted_modes; ++c) {
+//             int target_lvl = plan.contracted_levels[c];
+//             current_dense_idx += current_indices[target_lvl] * plan.dense_dim_strides[c];
+//         }
+//
+//         fiber_accumulator += csf_vals[e] * dense_input[current_dense_idx];
+//     }
+//
+//     if (fiber_accumulator != 0.0f) {
+//         int out_slot = atomicAdd(global_output_counter, 1);
+//         coo_out_vals[out_slot] = fiber_accumulator;
+//
+//         int out_order = csf.order - plan.num_contracted_modes;
+//         int out_d = 0;
+//         for (int d = 0; d < csf.order; ++d) {
+//             bool is_contracted = false;
+//             for (int c = 0; c < plan.num_contracted_modes; ++c) {
+//                 if (plan.contracted_levels[c] == d) {
+//                     is_contracted = true;
+//                     break;
+//                 }
+//             }
+//             if (!is_contracted) {
+//                 coo_out_indices[out_slot * out_order + out_d] = current_indices[d];
+//                 out_d++;
+//             }
+//         }
+//     }
+// }
+
+// #include "csf_einsum.cuh"
+#include <cstdio>
+// #include "csf_einsum.cuh"
+
 __global__ void einsum_universal_csf_kernel(
     const int* __restrict__ all_ptrs,
     const int* __restrict__ all_indices,
     const float* __restrict__ csf_vals,
     const float* __restrict__ dense_input,
-    EinsumPlan plan, // Passato per valore (allocato nei registri/constant memory)
-    UniversalCSF csf, // Passato per valore
+    EinsumPlan plan,
+    UniversalCSF csf,
     int root_size,
     int* __restrict__ coo_out_indices,
     float* __restrict__ coo_out_vals,
@@ -845,123 +993,80 @@ __global__ void einsum_universal_csf_kernel(
     int root_idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (root_idx >= root_size) return;
 
-    // Stack statici locali al thread (Dimensione massima fissa 7)
+    // Stack per il tracciamento degli stati dell'albero nei registri del thread
     int fiber_pos_stack[MAX_TENSOR_ORDER];
     int fiber_end_stack[MAX_TENSOR_ORDER];
     int current_indices[MAX_TENSOR_ORDER];
 
-    // Inizializzazione del Livello Radice (Livello 0)
     int lvl = 0;
+    // Il livello 0 legge dal primo segmento di all_ptrs
+    int root_ptr_lookup = csf.ptr_offsets[0] + root_idx;
+    int current_fiber_pos = all_ptrs[root_ptr_lookup];
+    int next_fiber_end = all_ptrs[root_ptr_lookup + 1];
 
-    int root_ptr_start = csf.ptr_offsets[0] + root_idx;
-    fiber_pos_stack[0] = all_ptrs[root_ptr_start];
-    fiber_end_stack[0] = all_ptrs[root_ptr_start + 1];
+    fiber_pos_stack[0] = current_fiber_pos;
+    fiber_end_stack[0] = next_fiber_end;
 
-    if (fiber_pos_stack[0] >= fiber_end_stack[0]) return;
-
-    // Loop di backtracking ottimizzato senza ricorsione
     while (lvl >= 0) {
-        if (lvl == csf.order - 1) {
-            // Livello foglia: eseguiamo la contrazione lungo la fibra finale
-            int start_idx = fiber_pos_stack[lvl];
-            int end_idx = fiber_end_stack[lvl];
+        int curr_pos = fiber_pos_stack[lvl];
+        int end_pos = fiber_end_stack[lvl];
 
-            for (int e = start_idx; e < end_idx; ++e) {
-                int leaf_idx = all_indices[csf.ind_offsets[lvl] + e];
-                current_indices[lvl] = leaf_idx;
+        if (curr_pos < end_pos) {
+            // Registra l'indice strutturale corrente per questo livello
+            current_indices[lvl] = all_indices[csf.ind_offsets[lvl] + curr_pos];
 
-                // Calcolo dello stride sull'operando denso usando registri statici
-                int current_dense_idx = 0;
+            if (lvl == csf.order - 1) {
+                // Siamo al livello foglia: calcoliamo l'elemento
+                int dense_idx = 0;
                 for (int c = 0; c < plan.num_contracted_modes; ++c) {
                     int target_lvl = plan.contracted_levels[c];
-                    current_dense_idx += current_indices[target_lvl] * plan.dense_dim_strides[c];
+                    dense_idx += current_indices[target_lvl] * plan.dense_dim_strides[c];
                 }
 
-                float val = csf_vals[e] * dense_input[current_dense_idx];
+                float val_calcolato = csf_vals[curr_pos] * dense_input[dense_idx];
 
-                if (val != 0.0f) {
-                    int out_slot = atomicAdd(global_output_counter, 1);
-                    coo_out_vals[out_slot] = val;
+                if (val_calcolato != 0.0f) {
+                    int slot = atomicAdd(global_output_counter, 1);
+                    coo_out_vals[slot] = val_calcolato;
 
-                    // Copia le coordinate nel formato COO di output
+                    int out_order = csf.order - plan.num_contracted_modes;
+                    int out_d = 0;
                     for (int d = 0; d < csf.order; ++d) {
-                        coo_out_indices[out_slot * csf.order + d] = current_indices[d];
+                        bool is_contracted = false;
+                        for (int c = 0; c < plan.num_contracted_modes; ++c) {
+                            if (plan.contracted_levels[c] == d) { is_contracted = true; break; }
+                        }
+                        if (!is_contracted) {
+                            coo_out_indices[slot * out_order + out_d] = current_indices[d];
+                            out_d++;
+                        }
                     }
                 }
+                fiber_pos_stack[lvl]++; // Avanza sulla fibra foglia
             }
-            // Risalita (Backtrack) al livello precedente
-            lvl--;
-        }
-        // Sostituisci la logica del blocco 'else' (nodi interni) nel tuo csf_einsum.cu con questa:
-        else {
-            int curr_pos = fiber_pos_stack[lvl];
-            int end_pos = fiber_end_stack[lvl];
-
-            if (curr_pos < end_pos) {
-                // Estrai l'indice reale a questo livello
-                current_indices[lvl] = all_indices[csf.ind_offsets[lvl] + curr_pos];
-
+            else {
+                // Livello interno: calcola la ramificazione per il livello successivo
                 int next_lvl = lvl + 1;
-                // Calcola dove puntare nel livello successivo
                 int next_ptr_lookup = csf.ptr_offsets[next_lvl] + curr_pos;
 
                 int next_start = all_ptrs[next_ptr_lookup];
                 int next_end = all_ptrs[next_ptr_lookup + 1];
 
-                // Avanziamo la posizione per il backtracking futuro di QUESTO livello
-                fiber_pos_stack[lvl]++;
+                fiber_pos_stack[lvl]++; // Avanza la traccia per il futuro backtracking
 
                 if (next_start < next_end) {
-                    // Scendiamo al livello successivo aggiornando lo stack
                     lvl = next_lvl;
                     fiber_pos_stack[lvl] = next_start;
                     fiber_end_stack[lvl] = next_end;
-                } else {
-                    // Sotto-albero vuoto (foglia senza figli reali o vicolo cieco)
-                    // Non scendiamo, il prossimo ciclo proverà il prossimo elemento di questo livello
                 }
-            } else {
-                // Fibra di questo livello terminata, risaliamo (Backtrack)
-                lvl--;
             }
-        }
-
-        // else {
-        //     // Nodo interno: processiamo l'indice corrente del livello attuale
-        //     int curr_pos = fiber_pos_stack[lvl];
-        //     int end_pos = fiber_end_stack[lvl];
-        //
-        //     if (curr_pos < end_pos) {
-        //         current_indices[lvl] = all_indices[csf.ind_offsets[lvl] + curr_pos];
-        //
-        //         // Prepariamo la discesa al livello successivo
-        //         int next_lvl = lvl + 1;
-        //         int next_ptr_lookup = csf.ptr_offsets[next_lvl] + curr_pos;
-        //
-        //         int next_start = all_ptrs[next_ptr_lookup];
-        //         int next_end = all_ptrs[next_ptr_lookup + 1];
-        //
-        //         if (next_start < next_end) {
-        //             // Avanziamo l'indice del livello corrente per i futuri backtracking
-        //             fiber_pos_stack[lvl]++;
-        //
-        //             // Scendiamo nell'albero
-        //             lvl = next_lvl;
-        //             fiber_pos_stack[lvl] = next_start;
-        //             fiber_end_stack[lvl] = next_end;
-        //         } else {
-        //             // Sotto-albero vuoto, passa al prossimo nodo sulla stessa fibra
-        //             fiber_pos_stack[lvl]++;
-        //         }
-        //     } else {
-        //         // Fibra completata, risaliamo di un livello
-        //         lvl--;
-        //     }
+        } else {
+            // Fibra terminata, risaliamo di un livello (Backtrack)
+            lvl--;
         }
     }
+}
 
-
-// Wrapper per l'invocazione da host C++
 void launch_csf_einsum(
     const UniversalCSF& csf,
     const EinsumPlan& plan,
@@ -971,7 +1076,7 @@ void launch_csf_einsum(
     float* d_out_vals,
     int* d_global_counter)
 {
-    int threads = 128;
+    int threads = 64;
     int blocks = (root_size + threads - 1) / threads;
 
     einsum_universal_csf_kernel<<<blocks, threads>>>(
@@ -980,3 +1085,187 @@ void launch_csf_einsum(
         d_out_indices, d_out_vals, d_global_counter
     );
 }
+
+
+//
+// // Aggiorna l'implementazione della funzione nel file csf_einsum.cu
+// void launch_csf_einsum(
+//     const UniversalCSF& csf,
+//     const EinsumPlan& plan,
+//     const float* d_dense_input,
+//     int total_leaves,
+//     int* d_out_indices,
+//     float* d_out_vals,
+//     int* d_global_counter)
+// {
+//     // Utilizziamo un numero standard di thread per blocco (es. 128 o 256)
+//     int threads = 128;
+//     int blocks = (total_leaves + threads - 1) / threads;
+//
+//     // Invocazione del kernel universale e dinamico guidato dai metadati del piano
+//     einsum_universal_leaf_kernel<<<blocks, threads>>>(
+//         csf.d_all_ptrs,
+//         csf.d_all_indices,
+//         csf.d_vals,
+//         d_dense_input,
+//         csf.d_coordinate_map,
+//         plan,
+//         csf,
+//         total_leaves,
+//         d_out_indices,
+//         d_out_vals,
+//         d_global_counter
+//     );
+// }
+//
+//
+// // __global__ void einsum_universal_csf_kernel(
+// //     const int* __restrict__ all_ptrs,
+// //     const int* __restrict__ all_indices,
+// //     const float* __restrict__ csf_vals,
+// //     const float* __restrict__ dense_input,
+// //     EinsumPlan plan, // Passato per valore (allocato nei registri/constant memory)
+// //     UniversalCSF csf, // Passato per valore
+// //     int root_size,
+// //     int* __restrict__ coo_out_indices,
+// //     float* __restrict__ coo_out_vals,
+// //     int* __restrict__ global_output_counter)
+// // {
+// //     int root_idx = blockIdx.x * blockDim.x + threadIdx.x;
+// //     if (root_idx >= root_size) return;
+// //
+// //     // Stack statici locali al thread (Dimensione massima fissa 7)
+// //     int fiber_pos_stack[MAX_TENSOR_ORDER];
+// //     int fiber_end_stack[MAX_TENSOR_ORDER];
+// //     int current_indices[MAX_TENSOR_ORDER];
+// //
+// //     // Inizializzazione del Livello Radice (Livello 0)
+// //     int lvl = 0;
+// //
+// //     int root_ptr_start = csf.ptr_offsets[0] + root_idx;
+// //     fiber_pos_stack[0] = all_ptrs[root_ptr_start];
+// //     fiber_end_stack[0] = all_ptrs[root_ptr_start + 1];
+// //
+// //     if (fiber_pos_stack[0] >= fiber_end_stack[0]) return;
+// //
+// //     // Loop di backtracking ottimizzato senza ricorsione
+// //     while (lvl >= 0) {
+// //         if (lvl == csf.order - 1) {
+// //             // Livello foglia: eseguiamo la contrazione lungo la fibra finale
+// //             int start_idx = fiber_pos_stack[lvl];
+// //             int end_idx = fiber_end_stack[lvl];
+// //
+// //             for (int e = start_idx; e < end_idx; ++e) {
+// //                 int leaf_idx = all_indices[csf.ind_offsets[lvl] + e];
+// //                 current_indices[lvl] = leaf_idx;
+// //
+// //                 // Calcolo dello stride sull'operando denso usando registri statici
+// //                 int current_dense_idx = 0;
+// //                 for (int c = 0; c < plan.num_contracted_modes; ++c) {
+// //                     int target_lvl = plan.contracted_levels[c];
+// //                     current_dense_idx += current_indices[target_lvl] * plan.dense_dim_strides[c];
+// //                 }
+// //
+// //                 float val = csf_vals[e] * dense_input[current_dense_idx];
+// //
+// //                 if (val != 0.0f) {
+// //                     int out_slot = atomicAdd(global_output_counter, 1);
+// //                     coo_out_vals[out_slot] = val;
+// //
+// //                     // Copia le coordinate nel formato COO di output
+// //                     for (int d = 0; d < csf.order; ++d) {
+// //                         coo_out_indices[out_slot * csf.order + d] = current_indices[d];
+// //                     }
+// //                 }
+// //             }
+// //             // Risalita (Backtrack) al livello precedente
+// //             lvl--;
+// //         }
+// //         // Sostituisci la logica del blocco 'else' (nodi interni) nel tuo csf_einsum.cu con questa:
+// //         else {
+// //             int curr_pos = fiber_pos_stack[lvl];
+// //             int end_pos = fiber_end_stack[lvl];
+// //
+// //             if (curr_pos < end_pos) {
+// //                 // Estrai l'indice reale a questo livello
+// //                 current_indices[lvl] = all_indices[csf.ind_offsets[lvl] + curr_pos];
+// //
+// //                 int next_lvl = lvl + 1;
+// //                 // Calcola dove puntare nel livello successivo
+// //                 int next_ptr_lookup = csf.ptr_offsets[next_lvl] + curr_pos;
+// //
+// //                 int next_start = all_ptrs[next_ptr_lookup];
+// //                 int next_end = all_ptrs[next_ptr_lookup + 1];
+// //
+// //                 // Avanziamo la posizione per il backtracking futuro di QUESTO livello
+// //                 fiber_pos_stack[lvl]++;
+// //
+// //                 if (next_start < next_end) {
+// //                     // Scendiamo al livello successivo aggiornando lo stack
+// //                     lvl = next_lvl;
+// //                     fiber_pos_stack[lvl] = next_start;
+// //                     fiber_end_stack[lvl] = next_end;
+// //                 } else {
+// //                     // Sotto-albero vuoto (foglia senza figli reali o vicolo cieco)
+// //                     // Non scendiamo, il prossimo ciclo proverà il prossimo elemento di questo livello
+// //                 }
+// //             } else {
+// //                 // Fibra di questo livello terminata, risaliamo (Backtrack)
+// //                 lvl--;
+// //             }
+// //         }
+// //
+// //         // else {
+// //         //     // Nodo interno: processiamo l'indice corrente del livello attuale
+// //         //     int curr_pos = fiber_pos_stack[lvl];
+// //         //     int end_pos = fiber_end_stack[lvl];
+// //         //
+// //         //     if (curr_pos < end_pos) {
+// //         //         current_indices[lvl] = all_indices[csf.ind_offsets[lvl] + curr_pos];
+// //         //
+// //         //         // Prepariamo la discesa al livello successivo
+// //         //         int next_lvl = lvl + 1;
+// //         //         int next_ptr_lookup = csf.ptr_offsets[next_lvl] + curr_pos;
+// //         //
+// //         //         int next_start = all_ptrs[next_ptr_lookup];
+// //         //         int next_end = all_ptrs[next_ptr_lookup + 1];
+// //         //
+// //         //         if (next_start < next_end) {
+// //         //             // Avanziamo l'indice del livello corrente per i futuri backtracking
+// //         //             fiber_pos_stack[lvl]++;
+// //         //
+// //         //             // Scendiamo nell'albero
+// //         //             lvl = next_lvl;
+// //         //             fiber_pos_stack[lvl] = next_start;
+// //         //             fiber_end_stack[lvl] = next_end;
+// //         //         } else {
+// //         //             // Sotto-albero vuoto, passa al prossimo nodo sulla stessa fibra
+// //         //             fiber_pos_stack[lvl]++;
+// //         //         }
+// //         //     } else {
+// //         //         // Fibra completata, risaliamo di un livello
+// //         //         lvl--;
+// //         //     }
+// //         }
+// //     }
+// //
+//
+// // Wrapper per l'invocazione da host C++
+// // void launch_csf_einsum(
+// //     const UniversalCSF& csf,
+// //     const EinsumPlan& plan,
+// //     const float* d_dense_input,
+// //     int root_size,
+// //     int* d_out_indices,
+// //     float* d_out_vals,
+// //     int* d_global_counter)
+// // {
+// //     int threads = 128;
+// //     int blocks = (root_size + threads - 1) / threads;
+// //
+// //     einsum_universal_csf_kernel<<<blocks, threads>>>(
+// //         csf.d_all_ptrs, csf.d_all_indices, csf.d_vals,
+// //         d_dense_input, plan, csf, root_size,
+// //         d_out_indices, d_out_vals, d_global_counter
+// //     );
+// // }
