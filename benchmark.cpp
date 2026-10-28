@@ -96,8 +96,8 @@
 #include <stdexcept>
 #include <cuda/std/detail/libcxx/include/cstring>
 
-EinsumPlan compile_einsum_string_simple(const std::string& expression) {
-    EinsumPlan plan{};
+SumReductionPlan compile_sum_reduction_string_simple(const std::string& expression) {
+    SumReductionPlan plan{};
 
     // 1. Inizializzazione degli array statici (tutti a 0 per coerenza con il tuo schema)
     plan.tensor_order = 0;
@@ -191,7 +191,7 @@ int main() {
 
     int dense_sizes[] = {2};
     std::string expression = "ijko,o->ijk";
-    EinsumPlan plan = compile_einsum_string_simple(expression);
+    SumReductionPlan plan = compile_sum_reduction_string_simple(expression);
 
     int root_size = 2; // i = 0, 1
     UniversalCSF csf{};
@@ -274,7 +274,7 @@ int main() {
     CUDA_CHECK(cudaMemset(d_global_counter, 0, sizeof(int)));
 
     // Esecuzione del kernel
-    launch_csf_einsum(csf, plan, d_dense_in, root_size, d_out_indices, d_out_vals, d_global_counter);
+    launch_csf_einsum_tensor_sum_reduction(csf, plan, d_dense_in, root_size, d_out_indices, d_out_vals, d_global_counter);
     CUDA_CHECK(cudaDeviceSynchronize());
 
     int h_final_nnz = 0;

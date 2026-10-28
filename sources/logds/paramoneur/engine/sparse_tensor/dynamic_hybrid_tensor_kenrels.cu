@@ -837,13 +837,13 @@
  * Ogni thread gestisce direttamente un segmento terminale (fibra di contrazione),
  * eliminando la divergenza del backtracking e garantendo che il 100% dei nodi sia processato.
  */
-__global__ void einsum_universal_leaf_kernel(
+__global__ void einsum_universal_sum_reduction_leaf_kernel(
     const int* __restrict__ all_ptrs,
     const int* __restrict__ all_indices,
     const float* __restrict__ csf_vals,
     const float* __restrict__ dense_input,
     const int* __restrict__ coordinate_map, // Matrice ordinata [nnz * csf.order]
-    EinsumPlan plan,
+    SumReductionPlan plan,
     UniversalCSF csf,
     int total_leaves, // Parallelizzazione 1:1 con il numero di foglie reali (nnz)
     int* __restrict__ coo_out_indices,
@@ -983,7 +983,7 @@ __global__ void einsum_universal_csf_kernel(
     const int* __restrict__ all_indices,
     const float* __restrict__ csf_vals,
     const float* __restrict__ dense_input,
-    EinsumPlan plan,
+    SumReductionPlan plan,
     UniversalCSF csf,
     int root_size,
     int* __restrict__ coo_out_indices,
@@ -1067,9 +1067,9 @@ __global__ void einsum_universal_csf_kernel(
     }
 }
 
-void launch_csf_einsum(
+void launch_csf_einsum_tensor_sum_reduction(
     const UniversalCSF& csf,
-    const EinsumPlan& plan,
+    const SumReductionPlan& plan,
     const float* d_dense_input,
     int root_size,
     int* d_out_indices,

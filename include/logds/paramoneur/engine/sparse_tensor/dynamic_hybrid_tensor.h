@@ -319,7 +319,7 @@ public:
 #define MAX_TENSOR_ORDER 7
 
 // Piano di contrazione dinamico estratto dal parser
-struct EinsumPlan {
+struct SumReductionPlan {
     int tensor_order;
     int num_contracted_modes;
     int contracted_levels[MAX_TENSOR_ORDER];
@@ -340,9 +340,9 @@ struct UniversalCSF {
 // Primitive Host
 // EinsumPlan compile_einsum_string(const std::string& expression, const int* dense_sizes);
 
-void launch_csf_einsum(
+void launch_csf_einsum_tensor_sum_reduction(
     const UniversalCSF& csf,
-    const EinsumPlan& plan,
+    const SumReductionPlan& plan,
     const float* d_dense_input,
     int root_size,
     int* d_out_indices,

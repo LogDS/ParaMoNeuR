@@ -112,11 +112,11 @@ __global__ void generate_csf_ptrs_kernel(
     }
 }
 
-__global__ void einsum_universal_leaf_kernel(
+__global__ void einsum_universal_sum_reduction_leaf_kernel(
     const float* __restrict__ csf_vals,
     const float* __restrict__ dense_input,
     const int* __restrict__ coordinate_matrix,
-    EinsumPlan plan,
+    SumReductionPlan plan,
     UniversalCSF csf,
     int* __restrict__ coo_out_indices,
     float* __restrict__ coo_out_vals,
@@ -157,19 +157,152 @@ __global__ void einsum_universal_leaf_kernel(
     }
 }
 
-void launch_csf_einsum(
+void launch_csf_einsum_tensor_sum_reduction(
     const UniversalCSF& csf,
-    const EinsumPlan& plan,
+    const SumReductionPlan& plan,
     const float* d_dense_input,
     UnifiedCOOOutput& out)
 {
     int threads = 128;
     int blocks = (csf.nnz + threads - 1) / threads;
-    einsum_universal_leaf_kernel<<<blocks, threads>>>(
+    einsum_universal_sum_reduction_leaf_kernel<<<blocks, threads>>>(
         csf.d_vals, d_dense_input, csf.d_coordinate_matrix,
         plan, csf, out.d_out_indices, out.d_out_vals, out.d_global_counter, out.out_order
     );
 }
+
+#include "csf_einsum.cuh"
+
+/**
+ * Kernel CUDA per la contrazione Einsum Pura su due tensori sparsi.
+ * Parallelizzazione basata sul cross-matching degli elementi foglia di A e B.
+ * Se le coordinate degli assi contratti coincidono, esegue il prodotto e proietta le coordinate superstiti.
+ */
+__global__ void einsum_two_tensors_leaf_kernel(
+    UniversalCSF csf_A,
+    UniversalCSF csf_B,
+    EinsumPlan plan,
+    int* __restrict__ coo_out_indices,
+    float* __restrict__ coo_out_vals,
+    int* __restrict__ global_output_counter,
+    int max_output_nnz)
+{
+    // Parallelizziamo mappando una griglia bidimensionale virtuale o linearizzando il prodotto delle foglie
+    int idx_A = blockIdx.x * blockDim.x + threadIdx.x;
+    int idx_B = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (idx_A >= csf_A.nnz || idx_B >= csf_B.nnz) return;
+
+    // 1. Estrazione delle coordinate complete per l'elemento corrente di A e di B
+    int coords_A[MAX_TENSOR_ORDER];
+    int coords_B[MAX_TENSOR_ORDER];
+
+    for (int d = 0; d < csf_A.order; ++d) {
+        coords_A[d] = csf_A.d_coordinate_matrix[idx_A * csf_A.order + d];
+    }
+    for (int d = 0; d < csf_B.order; ++d) {
+        coords_B[d] = csf_B.d_coordinate_matrix[idx_B * csf_B.order + d];
+    }
+
+    // 2. Controllo di corrispondenza geometrica degli assi contratti (Intersection Match)
+    bool is_match = true;
+
+    // Per ogni modalità contratta definita dal piano, controlliamo se A e B condividono lo stesso indice
+    for (int c = 0; c < plan.num_contracted_modes; ++c) {
+        int global_mode = plan.global_contracted_levels[c];
+
+        // Trova quale asse di A e B corrisponde a questo asse contratto globale
+        int local_axis_A = -1;
+        int local_axis_B = -1;
+        for (int d = 0; d < csf_A.order; ++d) {
+            if (plan.map_A_to_global[d] == global_mode) { local_axis_A = d; break; }
+        }
+        for (int d = 0; d < csf_B.order; ++d) {
+            if (plan.map_B_to_global[d] == global_mode) { local_axis_B = d; break; }
+        }
+
+        // Se l'asse è presente in entrambi ma le coordinate differiscono, non c'è intersezione
+        if (local_axis_A != -1 && local_axis_B != -1) {
+            if (coords_A[local_axis_A] != coords_B[local_axis_B]) {
+                is_match = false;
+                break;
+            }
+        }
+    }
+
+    // Controlliamo anche che le modalità comuni NON contratte (che vanno in output) combacino
+    if (is_match) {
+        for (int d_A = 0; d_A < csf_A.order; ++d_A) {
+            int global_mode_A = plan.map_A_to_global[d_A];
+            for (int d_B = 0; d_B < csf_B.order; ++d_B) {
+                int global_mode_B = plan.map_B_to_global[d_B];
+                if (global_mode_A == global_mode_B) {
+                    if (coords_A[d_A] != coords_B[d_B]) {
+                        is_match = false;
+                        break;
+                    }
+                }
+            }
+            if (!is_match) break;
+        }
+    }
+
+    // 3. Se la struttura geometrica interseca, calcoliamo il prodotto strutturale
+    if (is_match) {
+        float prodotto = csf_A.d_vals[idx_A] * csf_B.d_vals[idx_B];
+
+        if (prodotto != 0.0f) {
+            int out_slot = atomicAdd(global_output_counter, 1);
+            if (out_slot >= max_output_nnz) return; // Protezione out-of-bounds
+
+            coo_out_vals[out_slot] = prodotto;
+
+            // Costruiamo le coordinate di output proiettando le label salvate nel piano
+            for (int d_out = 0; d_out < plan.order_Out; ++d_out) {
+                int target_global_mode = plan.map_out_to_global[d_out];
+                int final_coord = 0;
+
+                // Cerca se l'indice appartiene ad A o a B per estrarre la coordinata reale
+                bool found = false;
+                for (int d_A = 0; d_A < csf_A.order; ++d_A) {
+                    if (plan.map_A_to_global[d_A] == target_global_mode) {
+                        final_coord = coords_A[d_A];
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    for (int d_B = 0; d_B < csf_B.order; ++d_B) {
+                        if (plan.map_B_to_global[d_B] == target_global_mode) {
+                            final_coord = coords_B[d_B];
+                            break;
+                        }
+                    }
+                }
+                coo_out_indices[out_slot * plan.order_Out + d_out] = final_coord;
+            }
+        }
+    }
+}
+
+void launch_csf_einsum_two_tensors(
+    const UniversalCSF& csf_A,
+    const UniversalCSF& csf_B,
+    const EinsumPlan& plan,
+    UnifiedCOOOutput& out)
+{
+    // Configurazione bidimensionale dei blocchi CUDA per mappare la combinazione delle foglie [NNZ_A x NNZ_B]
+    dim3 threadsPerBlock(16, 16);
+    dim3 numBlocks(
+        (csf_A.nnz + threadsPerBlock.x - 1) / threadsPerBlock.x,
+        (csf_B.nnz + threadsPerBlock.y - 1) / threadsPerBlock.y
+    );
+
+    einsum_two_tensors_leaf_kernel<<<numBlocks, threadsPerBlock>>>(
+        csf_A, csf_B, plan, out.d_out_indices, out.d_out_vals, out.d_global_counter, out.max_nnz
+    );
+}
+
 
 // =========================================================================
 // TRASFORMAZIONE ZERO-ALLOCATION IN-PLACE: REUT L'INTERO BUFFER DI OUTPUT
