@@ -103,46 +103,102 @@ EinsumPlan compile_einsum_string_simple(const std::string& expression) {
 
 #include <algorithm>
 
-// 2. IMPLEMENTAZIONE DEL COSTRUTTORE AUTOMATICO DA COO A TENSOR DEVICE
+// // 2. IMPLEMENTAZIONE DEL COSTRUTTORE AUTOMATICO DA COO A TENSOR DEVICE
+// UniversalCSF build_universal_csf_from_coo(const std::vector<RawCOOElement>& raw_elements, int tensor_order) {
+//     UniversalCSF csf{};
+//     csf.order = tensor_order;
+//     csf.nnz = static_cast<int>(raw_elements.size());
+//
+//     if (csf.nnz == 0) {
+//         csf.d_vals = nullptr;
+//         csf.d_coordinate_matrix = nullptr;
+//         return csf;
+//     }
+//
+//     // Ordinamento lessicografico stabile per le coordinate sparse
+//     std::vector<RawCOOElement> sorted_elements = raw_elements;
+//     std::sort(sorted_elements.begin(), sorted_elements.end(), [tensor_order](const RawCOOElement& a, const RawCOOElement& b) {
+//         for (int d = 0; d < tensor_order; ++d) {
+//             if (a.coords[d] != b.coords[d]) {
+//                 return a.coords[d] < b.coords[d];
+//             }
+//         }
+//         return false;
+//     });
+//
+//     std::vector<float> h_vals(csf.nnz);
+//     std::vector<int> h_coordinate_matrix;
+//     h_coordinate_matrix.reserve(csf.nnz * tensor_order);
+//
+//     for (int n = 0; n < csf.nnz; ++n) {
+//         h_vals[n] = sorted_elements[n].val;
+//         for (int d = 0; d < tensor_order; ++d) {
+//             h_coordinate_matrix.push_back(sorted_elements[n].coords[d]);
+//         }
+//     }
+//
+//     // Allocazione fisica lineare dei segmenti contigui sulla VRAM
+//     CUDA_CHECK(cudaMalloc(&csf.d_vals, csf.nnz * sizeof(float)));
+//     CUDA_CHECK(cudaMalloc(&csf.d_coordinate_matrix, h_coordinate_matrix.size() * sizeof(int)));
+//
+//     CUDA_CHECK(cudaMemcpy(csf.d_vals, h_vals.data(), csf.nnz * sizeof(float), cudaMemcpyHostToDevice));
+//     CUDA_CHECK(cudaMemcpy(csf.d_coordinate_matrix, h_coordinate_matrix.data(), h_coordinate_matrix.size() * sizeof(int), cudaMemcpyHostToDevice));
+//
+//     return csf;
+// }
+
+// =========================================================================
+// NUOVA COSTRUZIONE AD ALLOCAZIONE COMPATTA E UNIFICATA
+// =========================================================================
 UniversalCSF build_universal_csf_from_coo(const std::vector<RawCOOElement>& raw_elements, int tensor_order) {
     UniversalCSF csf{};
     csf.order = tensor_order;
     csf.nnz = static_cast<int>(raw_elements.size());
 
     if (csf.nnz == 0) {
+        csf.d_unified_buffer = nullptr;
         csf.d_vals = nullptr;
         csf.d_coordinate_matrix = nullptr;
         return csf;
     }
 
-    // Ordinamento lessicografico stabile per le coordinate sparse
+    // 1. Ordinamento lessicografico
     std::vector<RawCOOElement> sorted_elements = raw_elements;
     std::sort(sorted_elements.begin(), sorted_elements.end(), [tensor_order](const RawCOOElement& a, const RawCOOElement& b) {
         for (int d = 0; d < tensor_order; ++d) {
-            if (a.coords[d] != b.coords[d]) {
-                return a.coords[d] < b.coords[d];
-            }
+            if (a.coords[d] != b.coords[d]) return a.coords[d] < b.coords[d];
         }
         return false;
     });
 
-    std::vector<float> h_vals(csf.nnz);
-    std::vector<int> h_coordinate_matrix;
-    h_coordinate_matrix.reserve(csf.nnz * tensor_order);
+    // 2. Calcolo dei requisiti di memoria per ciascuna sezione
+    size_t vals_bytes = csf.nnz * sizeof(float);
+    size_t coords_bytes = csf.nnz * tensor_order * sizeof(int);
+    csf.total_buffer_bytes = vals_bytes + coords_bytes;
 
+    // 3. Allocazione di un UNICO array di byte contiguo sull'Host per preparare il pacchetto
+    std::vector<char> h_unified_buffer(csf.total_buffer_bytes);
+
+    // Mappiamo i puntatori temporanei host all'interno del buffer contiguo
+    float* h_vals_ptr = reinterpret_cast<float*>(h_unified_buffer.data());
+    int* h_coords_ptr = reinterpret_cast<int*>(h_unified_buffer.data() + vals_bytes);
+
+    // Riempimento del pacchetto unificato
     for (int n = 0; n < csf.nnz; ++n) {
-        h_vals[n] = sorted_elements[n].val;
+        h_vals_ptr[n] = sorted_elements[n].val;
         for (int d = 0; d < tensor_order; ++d) {
-            h_coordinate_matrix.push_back(sorted_elements[n].coords[d]);
+            h_coords_ptr[n * tensor_order + d] = sorted_elements[n].coords[d];
         }
     }
 
-    // Allocazione fisica lineare dei segmenti contigui sulla VRAM
-    CUDA_CHECK(cudaMalloc(&csf.d_vals, csf.nnz * sizeof(float)));
-    CUDA_CHECK(cudaMalloc(&csf.d_coordinate_matrix, h_coordinate_matrix.size() * sizeof(int)));
+    // 4. UNA SINGOLA ALLOCAZIONE E UNA SINGOLA COPPIA SU VRAM
+    CUDA_CHECK(cudaMalloc(&csf.d_unified_buffer, csf.total_buffer_bytes));
+    CUDA_CHECK(cudaMemcpy(csf.d_unified_buffer, h_unified_buffer.data(), csf.total_buffer_bytes, cudaMemcpyHostToDevice));
 
-    CUDA_CHECK(cudaMemcpy(csf.d_vals, h_vals.data(), csf.nnz * sizeof(float), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(csf.d_coordinate_matrix, h_coordinate_matrix.data(), h_coordinate_matrix.size() * sizeof(int), cudaMemcpyHostToDevice));
+    // 5. Risoluzione matematica dei puntatori device interni alla struttura tramite aritmetica
+    char* d_byte_base = reinterpret_cast<char*>(csf.d_unified_buffer);
+    csf.d_vals = reinterpret_cast<float*>(d_byte_base);
+    csf.d_coordinate_matrix = reinterpret_cast<int*>(d_byte_base + vals_bytes);
 
     return csf;
 }
@@ -234,7 +290,7 @@ int main() {
     }
 
     // Pulizia finale delle risorse hardware VRAM
-    cudaFree(csf.d_vals); cudaFree(csf.d_coordinate_matrix);
+    cudaFree(csf.d_unified_buffer);
     cudaFree(d_dense_in); cudaFree(d_out_indices); cudaFree(d_out_vals); cudaFree(d_global_counter);
     return 0;
 }

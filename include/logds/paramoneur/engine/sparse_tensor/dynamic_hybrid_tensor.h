@@ -19,53 +19,53 @@
 // // // #include "logds/paramoneur/types/SparseTensor.h"
 // // //
 // // // #ifdef NOT_WORKING_VERSION
-// // // struct EinsumRecipe {
-// // //     std::vector<std::vector<int>> input_axes;
-// // //     std::vector<int> output_axes;
-// // // };
-// // //
-// // // enum class TensorState { HYBRID_ACTIVE, CONSOLIDATED_CSF };
-// // // enum class ReductionOp { SUM, MAX, MIN, PROD };
-// // //
-// // // class DynamicHybridTensor {
-// // // public:
-// // //     size_t num_dims;
-// // //     std::vector<uint64_t> dims;
-// // //     size_t capacity;
-// // //     TensorState state;
-// // //
-// // //     // --- Contatori Hardware (GPU) ---
-// // //     uint32_t* d_csf_nnz;
-// // //     uint32_t* d_delta_nnz;
-// // //
-// // //     // --- Array CSF Principale (GPU) ---
-// // //     std::vector<uint64_t*> d_fptr;
-// // //     std::vector<uint64_t*> d_fids;
-// // //     float* d_csf_vals;
-// // //
-// // //     // --- Array COO Delta Buffer per Adam (GPU) ---
-// // //     uint64_t** d_delta_coords;
-// // //     float* d_delta_vals;
-// // //
-// // //     DynamicHybridTensor(const std::vector<uint64_t>& input_dims, size_t cap);
-// // //     ~DynamicHybridTensor();
-// // //
-// // //     void clear();
-// // //     void initialize_from_cpu(const logds::types::SparseTensor& cpu_tensor);
-// // //     void set_value_atomic(const std::vector<uint64_t>& coords, float value);
-// // //     void consolidate();
-// // //
-// // //     void hadamard(DynamicHybridTensor& B);
-// // //     void cell_sum(DynamicHybridTensor& B);
-// // //     void aggregate_axes(const std::vector<uint8_t>& keep_axes, ReductionOp op);
-// // //
-// // //     static DynamicHybridTensor n_way_einstein_sum(
-// // //         std::vector<DynamicHybridTensor*>& inputs,
-// // //         const EinsumRecipe& recipe,
-// // //         const std::vector<uint64_t>& out_dims,
-// // //         size_t out_capacity
-// // //     );
-// // // };
+struct EinsumRecipe {
+    std::vector<std::vector<int>> input_axes;
+    std::vector<int> output_axes;
+};
+
+enum class TensorState { HYBRID_ACTIVE, CONSOLIDATED_CSF };
+enum class ReductionOp { SUM, MAX, MIN, PROD };
+
+class DynamicHybridTensor {
+public:
+    size_t num_dims;
+    std::vector<uint64_t> dims;
+    size_t capacity;
+    TensorState state;
+
+    // --- Contatori Hardware (GPU) ---
+    uint32_t* d_csf_nnz;
+    uint32_t* d_delta_nnz;
+
+    // --- Array CSF Principale (GPU) ---
+    std::vector<uint64_t*> d_fptr;
+    std::vector<uint64_t*> d_fids;
+    float* d_csf_vals;
+
+    // --- Array COO Delta Buffer per Adam (GPU) ---
+    uint64_t** d_delta_coords;
+    float* d_delta_vals;
+
+    DynamicHybridTensor(const std::vector<uint64_t>& input_dims, size_t cap);
+    ~DynamicHybridTensor();
+
+    void clear();
+    void initialize_from_cpu(const logds::types::SparseTensor& cpu_tensor);
+    void set_value_atomic(const std::vector<uint64_t>& coords, float value);
+    void consolidate();
+
+    void hadamard(DynamicHybridTensor& B);
+    void cell_sum(DynamicHybridTensor& B);
+    void aggregate_axes(const std::vector<uint8_t>& keep_axes, ReductionOp op);
+
+    static DynamicHybridTensor n_way_einstein_sum(
+        std::vector<DynamicHybridTensor*>& inputs,
+        const EinsumRecipe& recipe,
+        const std::vector<uint64_t>& out_dims,
+        size_t out_capacity
+    );
+};
 // // //
 // // // #else
 // // //

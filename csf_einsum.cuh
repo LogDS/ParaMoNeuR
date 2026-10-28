@@ -16,13 +16,24 @@ struct EinsumPlan {
 
 // Struttura CSF Universale robusta per il multiprocessing parallelo
 struct UniversalCSF {
+    // int order;
+    // int nnz;
+    // float* d_vals;           // Valori float delle foglie (Dimensione: nnz)
+    //
+    // // Matrice delle coordinate [nnz * order] allocata sul device.
+    // // Ogni riga contiene le coordinate esatte (i, j, k, o...) di quella foglia.
+    // int* d_coordinate_matrix;
+
     int order;
     int nnz;
-    float* d_vals;           // Valori float delle foglie (Dimensione: nnz)
 
-    // Matrice delle coordinate [nnz * order] allocata sul device.
-    // Ogni riga contiene le coordinate esatte (i, j, k, o...) di quella foglia.
-    int* d_coordinate_matrix;
+    // Unico puntatore alla memoria globale allocata sul device
+    void* d_unified_buffer;
+    size_t total_buffer_bytes;
+
+    // Puntatori derivati tramite aritmetica degli offset (puntano all'interno di d_unified_buffer)
+    float* d_vals;
+    int* d_coordinate_matrix; 
 };
 
 void launch_csf_einsum(
