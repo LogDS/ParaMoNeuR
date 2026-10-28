@@ -15,47 +15,91 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
    }
 }
 
-// Compilatore Host reale: estrae strides e coordinate contratte da QUALSIASI stringa compatibile
-EinsumPlan compile_einsum_string(const std::string& expression, const int* dense_sizes) {
+
+EinsumPlan compile_einsum_string_simple(const std::string& expression) {
     EinsumPlan plan{};
+
+    // 1. Inizializzazione degli array statici (tutti a 0 per coerenza con il tuo schema)
     plan.tensor_order = 0;
     plan.num_contracted_modes = 0;
     for (int i = 0; i < MAX_TENSOR_ORDER; ++i) {
-        plan.contracted_levels[i] = -1;
+        plan.contracted_levels[i] = 0;
         plan.dense_dim_strides[i] = 0;
     }
 
+    // 2. Splitting minimale della stringa per isolare i componenti
     size_t comma_pos = expression.find(',');
     size_t arrow_pos = expression.find("->");
+
     if (comma_pos == std::string::npos || arrow_pos == std::string::npos) {
-        throw std::invalid_argument("Formato stringa Einsum non valido.");
+        throw std::invalid_argument("Formato non valido. Usa il formato 'ijko,o->ijk'");
     }
 
     std::string sparse_labels = expression.substr(0, comma_pos);
-    std::string dense_labels  = expression.substr(comma_pos + 1, arrow_pos - comma_pos - 1);
     std::string output_labels = expression.substr(arrow_pos + 2);
 
+    // Imposta il rango del tensore sparse
     plan.tensor_order = static_cast<int>(sparse_labels.length());
 
+    // 3. Trova le modalità contratte (presenti in sparse ma NON in output)
     for (int i = 0; i < plan.tensor_order; ++i) {
         char current_label = sparse_labels[i];
-        if (output_labels.find(current_label) == std::string::npos) {
-            plan.contracted_levels[plan.num_contracted_modes] = i;
 
-            int stride = 1;
-            size_t dense_pos = dense_labels.find(current_label);
-            if (dense_pos != std::string::npos) {
-                for (size_t d = dense_labels.length() - 1; d > dense_pos; --d) {
-                    stride *= dense_sizes[d];
-                }
-                plan.dense_dim_strides[plan.num_contracted_modes] = stride;
-            }
+        // Se la label non è presente nell'output, la contraiamo
+        if (output_labels.find(current_label) == std::string::npos) {
+            // Mappa l'indice del livello e imposta lo stride fisso a 1
+            plan.contracted_levels[plan.num_contracted_modes] = i;
+            plan.dense_dim_strides[plan.num_contracted_modes] = 1;
+
             plan.num_contracted_modes++;
         }
     }
+
     return plan;
 }
 
+//
+// // Compilatore Host reale: estrae strides e coordinate contratte da QUALSIASI stringa compatibile
+// EinsumPlan compile_einsum_string(const std::string& expression, const int* dense_sizes) {
+//     EinsumPlan plan{};
+//     plan.tensor_order = 0;
+//     plan.num_contracted_modes = 0;
+//     for (int i = 0; i < MAX_TENSOR_ORDER; ++i) {
+//         plan.contracted_levels[i] = -1;
+//         plan.dense_dim_strides[i] = 0;
+//     }
+//
+//     size_t comma_pos = expression.find(',');
+//     size_t arrow_pos = expression.find("->");
+//     if (comma_pos == std::string::npos || arrow_pos == std::string::npos) {
+//         throw std::invalid_argument("Formato stringa Einsum non valido.");
+//     }
+//
+//     std::string sparse_labels = expression.substr(0, comma_pos);
+//     std::string dense_labels  = expression.substr(comma_pos + 1, arrow_pos - comma_pos - 1);
+//     std::string output_labels = expression.substr(arrow_pos + 2);
+//
+//     plan.tensor_order = static_cast<int>(sparse_labels.length());
+//
+//     for (int i = 0; i < plan.tensor_order; ++i) {
+//         char current_label = sparse_labels[i];
+//         if (output_labels.find(current_label) == std::string::npos) {
+//             plan.contracted_levels[plan.num_contracted_modes] = i;
+//
+//             int stride = 1;
+//             size_t dense_pos = dense_labels.find(current_label);
+//             if (dense_pos != std::string::npos) {
+//                 for (size_t d = dense_labels.length() - 1; d > dense_pos; --d) {
+//                     stride *= dense_sizes[d];
+//                 }
+//                 plan.dense_dim_strides[plan.num_contracted_modes] = stride;
+//             }
+//             plan.num_contracted_modes++;
+//         }
+//     }
+//     return plan;
+// }
+//
 
 
 int main() {
@@ -64,7 +108,7 @@ int main() {
     // Definiamo le dimensioni dell'operando denso (es. asse o = 2)
     int dense_sizes[] = {2};
     std::string expression = "ijko,o->ijk";
-    EinsumPlan plan = compile_einsum_string(expression, dense_sizes);
+    EinsumPlan plan = compile_einsum_string_simple(expression);
 
     UniversalCSF csf{};
     csf.order = 4;
